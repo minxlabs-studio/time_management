@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Đá Trước — Quản lý thời gian chủ đích</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F5F5;
+  --surface:#FFFFFF;
+  --surface2:#F7F7F7;
+  --border:rgba(0,0,0,0.09);
+  --border2:rgba(0,0,0,0.15);
+  --text:#111111;
+  --text2:#555555;
+  --text3:#999999;
+  --purple:#534AB7;
+  --purple-lt:#EEEDFE;
+  --purple-dk:#3C3489;
+  --green:#1D9E75;
+  --green-lt:#E1F5EE;
+  --coral:#D85A30;
+  --coral-lt:#FAECE7;
+  --blue:#185FA5;
+  --blue-lt:#E6F1FB;
+  --amber:#EF9F27;
+  --amber-lt:#FAEEDA;
+  --gray-lt:#F1EFE8;
+  --r:10px;
+  --r-lg:14px;
+  --r-xl:20px;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100vh}
+
+/* ── LOGIN ── */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
+.login-card{background:var(--surface);border-radius:var(--r-xl);padding:2.5rem 2rem;width:340px;text-align:center;border:1px solid var(--border)}
+.login-logo{width:56px;height:56px;border-radius:16px;background:var(--purple-lt);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:28px}
+.login-title{font-size:22px;font-weight:600;color:var(--text);margin-bottom:.4rem}
+.login-sub{font-size:13px;color:var(--text2);margin-bottom:1.75rem;line-height:1.6}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px 18px;background:var(--purple);color:#fff;border:none;border-radius:var(--r);font-size:14px;font-weight:500;cursor:pointer;transition:background .15s;font-family:'Inter',sans-serif}
+.btn-google:hover{background:var(--purple-dk)}
+.login-note{font-size:11px;color:var(--text3);margin-top:.75rem}
+
+/* ── APP SHELL ── */
+#app{display:none;flex-direction:column;min-height:100vh}
+#app.on{display:flex}
+
+/* ── TOPBAR ── */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;flex-shrink:0;position:sticky;top:0;z-index:100}
+.topbar-brand{display:flex;align-items:center;gap:10px}
+.brand-icon{width:30px;height:30px;border-radius:8px;background:var(--purple-lt);display:flex;align-items:center;justify-content:center;font-size:16px}
+.brand-name{font-size:15px;font-weight:600;color:var(--text)}
+.brand-sub{font-size:12px;color:var(--text3);font-weight:400}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--purple);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
+.avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.user-name{font-size:13px;color:var(--text2)}
+.btn-out{font-size:12px;padding:4px 10px;border:1px solid var(--border2);border-radius:6px;background:none;cursor:pointer;color:var(--text2);font-family:'Inter',sans-serif}
+.btn-out:hover{background:var(--surface2)}
+
+/* ── TABS ── */
+.tabs-bar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;padding:0 1.5rem;gap:0;overflow-x:auto;flex-shrink:0}
+.tabs-bar::-webkit-scrollbar{display:none}
+.tab{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px;transition:color .15s}
+.tab svg{opacity:.6}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--purple);border-bottom-color:var(--purple)}
+.tab.active svg{opacity:1}
+
+/* ── CONTENT ── */
+.content{flex:1;padding:1.5rem}
+.page{display:none}
+.page.on{display:block}
+
+/* ── WEEK NAV ── */
+.week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:8px}
+.week-nav-l{display:flex;align-items:center;gap:8px}
+.wn-btn{padding:5px 12px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text2);cursor:pointer;font-size:14px;font-family:'Inter',sans-serif}
+.wn-btn:hover{background:var(--surface2)}
+.week-label{font-size:14px;font-weight:500;color:var(--text);min-width:170px;text-align:center}
+.wn-btn-primary{padding:6px 14px;border:none;border-radius:var(--r);background:var(--surface);border:1px solid var(--border2);color:var(--text);cursor:pointer;font-size:13px;font-weight:500;font-family:'Inter',sans-serif}
+.wn-btn-primary:hover{background:var(--surface2)}
+.sync-btn{padding:6px 14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;font-family:'Inter',sans-serif}
+.sync-btn:hover{background:var(--surface2)}
+
+/* ── STATS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 18px}
+.stat-lbl{font-size:12px;color:var(--text2);margin-bottom:6px}
+.stat-val{font-size:26px;font-weight:600;color:var(--text);line-height:1}
+.stat-sub{font-size:12px;color:var(--text3);margin-top:4px}
+
+/* ── MATRIX GRID ── */
+.matrix-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.quadrant{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
+.quad-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.quad-title{font-size:13px;font-weight:600}
+.q1 .quad-title{color:#993C1D}
+.q2 .quad-title{color:#0F6E56}
+.q3 .quad-title{color:#185FA5}
+.q4 .quad-title{color:var(--text2)}
+.quad-badge{font-size:11px;padding:3px 9px;border-radius:100px;font-weight:500}
+.b1{background:var(--coral-lt);color:#993C1D}
+.b2{background:var(--green-lt);color:#0F6E56}
+.b3{background:var(--blue-lt);color:#185FA5}
+.b4{background:var(--gray-lt);color:var(--text2)}
+
+/* ── TASK LIST ── */
+.task-item{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.task-item:last-of-type{border-bottom:none}
+.t-check{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border2);cursor:pointer;flex-shrink:0;margin-top:1px;background:none;display:flex;align-items:center;justify-content:center;padding:0}
+.t-check.done{background:var(--green);border-color:var(--green)}
+.t-check.done::after{content:'✓';font-size:10px;color:#fff;font-weight:700}
+.t-body{flex:1;min-width:0}
+.t-text{font-size:13px;color:var(--text);line-height:1.4}
+.t-text.done{text-decoration:line-through;color:var(--text3)}
+.t-meta{display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap}
+.t-meta span{font-size:11px;color:var(--text3)}
+.t-meta .gcal-dot{color:var(--blue);font-weight:500}
+.t-meta .goal-tag{padding:1px 5px;border-radius:3px;font-size:10px;font-weight:500}
+.t-actions{display:flex;gap:3px;flex-shrink:0}
+.t-act-btn{background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--text3);font-size:12px;padding:3px 7px;font-family:'Inter',sans-serif}
+.t-act-btn:hover{background:var(--surface2);color:var(--text)}
+
+/* ── ADD TASK FORM ── */
+.add-form{padding-top:10px;margin-top:6px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.add-form-row{display:flex;gap:6px}
+.add-form input[type=text]{flex:1;font-size:13px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif}
+.add-form input[type=text]:focus{outline:none;border-color:var(--purple);background:var(--surface)}
+.add-form input[type=number]{width:62px;flex-shrink:0;font-size:13px;padding:7px 8px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif;text-align:center}
+.add-form input[type=date]{flex:1;font-size:12px;padding:7px 8px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif}
+.add-form .add-btn{flex-shrink:0;padding:7px 14px;background:var(--purple);color:#fff;border:none;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;font-family:'Inter',sans-serif}
+.add-form .add-btn:hover{background:var(--purple-dk)}
+
+/* ── GCAL PAGE ── */
+.gcal-week-strip{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;margin-bottom:1.25rem}
+.gcal-week-strip::-webkit-scrollbar{height:4px}
+.gcal-week-strip::-webkit-scrollbar-track{background:transparent}
+.gcal-week-strip::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.day-col{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:12px;min-width:100px;flex-shrink:0}
+.day-col.today .day-num{background:var(--purple);color:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:8px}
+.day-name{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.day-num{font-size:22px;font-weight:400;color:var(--text);margin-bottom:8px;line-height:1}
+.ev-chip{font-size:11px;padding:3px 7px;border-radius:4px;margin-bottom:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%}
+.ev-q1{background:var(--coral-lt);color:#712B13}
+.ev-q2{background:var(--purple-lt);color:#26215C}
+.ev-q3{background:var(--blue-lt);color:#0C447C}
+.ev-q4{background:var(--gray-lt);color:var(--text2)}
+.ev-gcal{background:var(--green-lt);color:#085041}
+.gcal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;margin-bottom:12px}
+.gcal-card-title{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.push-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.push-row:last-child{border-bottom:none}
+.push-info{flex:1;min-width:0}
+.push-info strong{font-size:13px;display:block;color:var(--text)}
+.push-info span{font-size:11px;color:var(--text3)}
+.gcal-form-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:12px;font-weight:500;color:var(--text2)}
+.form-group input,.form-group select,.form-group textarea{font-size:13px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--purple);background:var(--surface)}
+.form-group textarea{resize:vertical;min-height:60px}
+
+/* ── GOALS PAGE ── */
+.goals-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+.goals-stats{display:flex;gap:10px;overflow-x:auto;margin-bottom:1.25rem}
+.goals-stats .stat-card{min-width:110px;flex-shrink:0}
+.goal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;margin-bottom:12px}
+.goal-card-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.goal-cat-icon{font-size:20px;flex-shrink:0;margin-top:1px}
+.goal-info{flex:1;margin:0 12px}
+.goal-name{font-size:15px;font-weight:600;color:var(--text)}
+.goal-dead{font-size:12px;color:var(--text3);margin-top:2px}
+.goal-card-actions{display:flex;gap:6px;flex-shrink:0}
+.goal-btn{font-size:12px;padding:4px 10px;border:1px solid var(--border2);border-radius:6px;background:none;cursor:pointer;color:var(--text2);font-family:'Inter',sans-serif}
+.goal-btn:hover{background:var(--surface2)}
+.goal-desc{font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.6}
+.pbar-wrap{background:var(--surface2);border-radius:100px;height:5px;overflow:hidden;margin-bottom:5px}
+.pbar-fill{height:5px;border-radius:100px;transition:width .4s}
+.pbar-lbl{font-size:11px;color:var(--text3);margin-bottom:12px}
+.ms-section-lbl{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.ms-flow{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-bottom:6px;margin-bottom:12px}
+.ms-step{display:flex;flex-direction:column;align-items:center;min-width:80px;max-width:100px}
+.ms-node{width:26px;height:26px;border-radius:50%;border:2px solid var(--border2);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text3);flex-shrink:0}
+.ms-node.done{background:var(--green);border-color:var(--green);color:#fff}
+.ms-node.active{background:var(--purple-lt);border-color:var(--purple);color:var(--purple)}
+.ms-arrow{flex:1;height:2px;background:var(--border2);align-self:flex-start;margin-top:12px;min-width:10px;flex-shrink:0}
+.ms-arrow.done{background:var(--green)}
+.ms-lbl{font-size:10px;color:var(--text2);text-align:center;margin-top:5px;padding:0 4px;line-height:1.3}
+.ms-lbl.done{color:var(--text3);text-decoration:line-through}
+.ms-lbl.active{color:var(--purple);font-weight:500}
+.ms-date-lbl{font-size:10px;color:var(--text3);text-align:center;margin-top:2px}
+.goal-tasks-section{border-top:1px solid var(--border);padding-top:12px}
+.goal-tasks-lbl{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.goal-task-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+.goal-task-row:last-of-type{border-bottom:none}
+.q-pill{font-size:10px;padding:2px 7px;border-radius:100px;font-weight:600;flex-shrink:0}
+.goal-task-name{flex:1;font-size:13px;color:var(--text)}
+.goal-task-meta{font-size:11px;color:var(--text3);white-space:nowrap}
+.goal-task-done{text-decoration:line-through;color:var(--text3)}
+.add-goal-task-btn{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--purple);background:none;border:1px dashed #AFA9EC;border-radius:var(--r);padding:4px 10px;cursor:pointer;margin-top:8px;font-family:'Inter',sans-serif}
+.add-goal-task-btn:hover{background:var(--purple-lt)}
+
+/* ── AI COACH ── */
+.ai-quick-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1.25rem}
+.ai-q-btn{font-size:12px;padding:6px 14px;border:1px solid var(--border2);border-radius:100px;background:var(--surface);color:var(--text2);cursor:pointer;font-family:'Inter',sans-serif}
+.ai-q-btn:hover{background:var(--purple-lt);border-color:var(--purple);color:var(--purple)}
+.ai-input-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
+.ai-input-row{display:flex;gap:8px}
+.ai-input-row input{flex:1;font-size:14px;padding:9px 12px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif}
+.ai-input-row input:focus{outline:none;border-color:var(--purple);background:var(--surface)}
+.ai-send-btn{padding:9px 18px;background:var(--purple);color:#fff;border:none;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;font-family:'Inter',sans-serif;white-space:nowrap}
+.ai-send-btn:hover{background:var(--purple-dk)}
+.ai-send-btn:disabled{opacity:.5;cursor:not-allowed}
+.ai-response{margin-top:12px;padding:14px;background:var(--purple-lt);border-radius:var(--r);font-size:13px;line-height:1.75;color:var(--text);white-space:pre-wrap;display:none}
+.ai-response.on{display:block}
+.ai-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--purple);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── MEMORY ── */
+.mem-jar-hero{text-align:center;padding:1.5rem 0 1rem;margin-bottom:1rem;border-bottom:1px solid var(--border)}
+.mem-jar-count{font-size:42px;font-weight:700;color:var(--purple);line-height:1}
+.mem-jar-sub{font-size:13px;color:var(--text3);margin-top:4px}
+.mem-add-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:14px}
+.mem-add-row{display:flex;gap:8px}
+.mem-add-row input{flex:1;font-size:14px;padding:9px 12px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif}
+.mem-add-row input:focus{outline:none;border-color:var(--purple);background:var(--surface)}
+.mem-save-btn{padding:9px 18px;background:var(--purple);color:#fff;border:none;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;font-family:'Inter',sans-serif}
+.mem-save-btn:hover{background:var(--purple-dk)}
+.mem-item{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:8px}
+.mem-date{font-size:11px;color:var(--text3);white-space:nowrap;min-width:50px;padding-top:2px}
+.mem-text{flex:1;font-size:13px;color:var(--text);line-height:1.6}
+.mem-del{background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:0 2px;line-height:1}
+.mem-del:hover{color:var(--coral)}
+
+/* ── REVIEW ── */
+.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.review-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
+.review-card-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.bar-label{font-size:12px;color:var(--text2);min-width:100px}
+.bar-track{flex:1;background:var(--surface2);border-radius:100px;height:6px;overflow:hidden}
+.bar-fill{height:6px;border-radius:100px}
+.bar-pct{font-size:11px;color:var(--text3);min-width:34px;text-align:right}
+.review-insight{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;font-size:13px;color:var(--text2);line-height:1.75}
+.review-insight strong{color:var(--text)}
+
+/* ── HOURS CARD ── */
+.hours-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;margin-bottom:12px}
+.hours-section-lbl{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 8px}
+.hours-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.hours-row label{font-size:13px;color:var(--text2);min-width:160px}
+.hours-row input{width:70px;text-align:center;font-size:14px;font-weight:500;padding:6px 8px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif}
+.hours-row input:focus{outline:none;border-color:var(--purple)}
+.hours-result{display:flex;justify-content:space-between;align-items:center;padding-top:12px;margin-top:8px;border-top:1px solid var(--border)}
+.hours-result-lbl{font-size:13px;color:var(--text2)}
+.hours-result-val{font-size:24px;font-weight:700;color:var(--purple)}
+.hours-verdict{font-size:12px;padding:9px 12px;border-radius:var(--r);margin-top:10px}
+.h-red{background:var(--coral-lt);color:#712B13}
+.h-grn{background:var(--green-lt);color:#085041}
+
+/* ── MODAL ── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;align-items:center;justify-content:center}
+.modal-bg.on{display:flex}
+.modal{background:var(--surface);border-radius:var(--r-xl);padding:1.5rem;width:500px;max-width:95vw;max-height:85vh;overflow-y:auto}
+.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+.modal-title{font-size:16px;font-weight:600;color:var(--text)}
+.modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:var(--text2);line-height:1;padding:0}
+.modal-foot{display:flex;gap:8px;justify-content:flex-end;margin-top:1.25rem}
+.modal-form .form-group{margin-bottom:10px}
+.modal-form .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn-cancel{padding:8px 16px;border:1px solid var(--border2);border-radius:var(--r);background:none;cursor:pointer;font-size:13px;color:var(--text2);font-family:'Inter',sans-serif}
+.btn-cancel:hover{background:var(--surface2)}
+.btn-save{padding:8px 20px;background:var(--purple);color:#fff;border:none;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;font-family:'Inter',sans-serif}
+.btn-save:hover{background:var(--purple-dk)}
+.ms-form-item{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
+.ms-form-item:last-child{border-bottom:none}
+.ms-form-item span{flex:1}
+.ms-form-item button{background:none;border:none;cursor:pointer;color:var(--coral);font-size:14px;padding:0 3px}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:20px;right:20px;background:#111;color:#fff;padding:10px 18px;border-radius:var(--r);font-size:13px;opacity:0;pointer-events:none;transition:opacity .3s;z-index:999;max-width:300px}
+.toast.on{opacity:1}
+
+/* ── LOADING ── */
+.loading-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:999}
+.loading-overlay.off{display:none}
+.loading-spin{width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--purple);border-radius:50%;animation:spin .7s linear infinite}
+.loading-txt{font-size:13px;color:var(--text2)}
+
+/* ── UTIL ── */
+.btn-primary{padding:7px 16px;background:var(--purple);color:#fff;border:none;border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:500;font-family:'Inter',sans-serif}
+.btn-primary:hover{background:var(--purple-dk)}
+.btn-ghost{padding:7px 14px;border:1px solid var(--border2);border-radius:var(--r);background:none;color:var(--text);cursor:pointer;font-size:13px;font-family:'Inter',sans-serif}
+.btn-ghost:hover{background:var(--surface2)}
+.section-title{font-size:15px;font-weight:600;color:var(--text);margin-bottom:1rem}
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--text3);font-size:13px}
+.empty-state .ei{font-size:2.5rem;margin-bottom:8px}
+
+@media(max-width:640px){
+  .stats-grid{grid-template-columns:1fr 1fr}
+  .matrix-grid{grid-template-columns:1fr}
+  .review-grid{grid-template-columns:1fr}
+  .gcal-form-grid{grid-template-columns:1fr}
+  .content{padding:1rem}
+  .topbar{padding:0 1rem}
+  .tabs-bar{padding:0 1rem}
+}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="loading-spin"></div>
+  <div class="loading-txt">Đang tải...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">🪨</div>
+    <h1 class="login-title">Đá Trước</h1>
+    <p class="login-sub">Quản lý thời gian chủ đích.<br>Đặt việc quan trọng vào cuộc sống trước tiên.</p>
+    <button class="btn-google" onclick="signInGoogle()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57C21.36 18.45 22.56 15.56 22.56 12.25z" fill="white"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="white"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="white"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="white"/></svg>
+      Đăng nhập với Google
+    </button>
+    <p class="login-note">Dữ liệu sync qua Firebase · Google Calendar tích hợp</p>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header class="topbar">
+    <div class="topbar-brand">
+      <div class="brand-icon">🪨</div>
+      <span class="brand-name">Đá Trước</span>
+      <span class="brand-sub">/ Quản lý thời gian chủ đích</span>
+    </div>
+    <div class="topbar-right">
+      <div class="avatar" id="user-av"></div>
+      <span class="user-name" id="user-nm"></span>
+      <button class="btn-out" onclick="doSignOut()">Đăng xuất</button>
+    </div>
+  </header>
+
+  <nav class="tabs-bar">
+    <div class="tab active" onclick="showTab('matrix',this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Ma trận tuần
+    </div>
+    <div class="tab" onclick="showTab('gcal',this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Google Calendar
+    </div>
+    <div class="tab" onclick="showTab('goals',this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+      Goals & Dự án
+    </div>
+    <div class="tab" onclick="showTab('ai',this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      AI Coach
+    </div>
+    <div class="tab" onclick="showTab('memory',this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+      Lọ ký ức
+    </div>
+    <div class="tab" onclick="showTab('review',this)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Tổng kết
+    </div>
+  </nav>
+
+  <main class="content">
+
+    <!-- ══ MA TRẬN TUẦN ══ -->
+    <div id="page-matrix" class="page on">
+      <div class="week-nav">
+        <div class="week-nav-l">
+          <button class="wn-btn" onclick="changeWeek(-1)">‹</button>
+          <span class="week-label" id="week-label">Tuần này</span>
+          <button class="wn-btn" onclick="changeWeek(1)">›</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="wn-btn-primary" onclick="goToday()">Hôm nay</button>
+          <button class="sync-btn" onclick="syncFromGCal()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Đồng bộ GCal
+          </button>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="stats-grid"></div>
+
+      <div class="matrix-grid">
+        <div class="quadrant q1">
+          <div class="quad-head"><span class="quad-title">Ô 1 — Khẩn cấp & quan trọng</span><span class="quad-badge b1">Làm ngay</span></div>
+          <div id="tl-q1"></div>
+          <div class="add-form" id="af-q1"></div>
+        </div>
+        <div class="quadrant q2">
+          <div class="quad-head"><span class="quad-title">Ô 2 — Quan trọng, chưa khẩn</span><span class="quad-badge b2">🪨 Bảo vệ</span></div>
+          <div id="tl-q2"></div>
+          <div class="add-form" id="af-q2"></div>
+        </div>
+        <div class="quadrant q3">
+          <div class="quad-head"><span class="quad-title">Ô 3 — Khẩn cấp, ít quan trọng</span><span class="quad-badge b3">Giao / giảm</span></div>
+          <div id="tl-q3"></div>
+          <div class="add-form" id="af-q3"></div>
+        </div>
+        <div class="quadrant q4">
+          <div class="quad-head"><span class="quad-title">Ô 4 — Không khẩn, ít quan trọng</span><span class="quad-badge b4">Hạn chế</span></div>
+          <div id="tl-q4"></div>
+          <div class="add-form" id="af-q4"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ GOOGLE CALENDAR ══ -->
+    <div id="page-gcal" class="page">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
+        <h2 class="section-title" style="margin:0">Lịch tuần từ Google Calendar</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn-ghost" onclick="fetchCalendarList()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            Làm mới
+          </button>
+        </div>
+      </div>
+
+      <!-- Calendar list selector -->
+      <div class="gcal-card" id="cal-list-card">
+        <div class="gcal-card-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>My Calendars — chọn lịch hiển thị</span>
+          <button class="btn-ghost" style="font-size:12px;padding:3px 10px" onclick="loadGCalFromSelected()">Áp dụng</button>
+        </div>
+        <div id="cal-list-items" style="font-size:13px;color:var(--text3);padding:4px 0">Đang tải danh sách lịch...</div>
+      </div>
+
+      <div id="gcal-strip" class="gcal-week-strip"></div>
+
+      <div class="gcal-card">
+        <div class="gcal-card-title">Đẩy task lên Google Calendar</div>
+        <div id="gcal-push-list"><div style="font-size:13px;color:var(--text3);padding:6px 0">Không có task mới. Thêm ngày hẹn cho task trong Ma trận.</div></div>
+      </div>
+
+      <div class="gcal-card">
+        <div class="gcal-card-title">Tạo event mới trực tiếp</div>
+        <div class="gcal-form-grid">
+          <div class="form-group" style="grid-column:1/-1"><label>Tiêu đề</label><input type="text" id="gn-title" placeholder="Tên event..."></div>
+          <div class="form-group"><label>Lịch đích</label><select id="gn-cal-id"><option value="primary">primary (mặc định)</option></select></div>
+          <div class="form-group"><label>Ngày</label><input type="date" id="gn-date"></div>
+          <div class="form-group"><label>Giờ bắt đầu</label><input type="time" id="gn-start" value="09:00"></div>
+          <div class="form-group"><label>Thời lượng (phút)</label><input type="number" id="gn-dur" value="60" min="15" step="15"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:12px"><label>Ghi chú</label><input type="text" id="gn-desc" placeholder="Mô tả thêm..."></div>
+        <button class="btn-primary" onclick="createGCalEvent()">Tạo event trên Google Calendar</button>
+      </div>
+
+      <!-- Push task: chọn lịch -->
+      <div id="push-cal-selector" style="display:none" class="gcal-card">
+        <div class="gcal-card-title">Chọn lịch để đẩy task</div>
+        <div id="push-cal-info" style="font-size:13px;color:var(--text2);margin-bottom:10px"></div>
+        <div class="form-group"><label>Đẩy vào lịch</label><select id="push-cal-id"><option value="primary">primary</option></select></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn-primary" id="push-confirm-btn">📅 Xác nhận đẩy lên GCal</button>
+          <button class="btn-ghost" onclick="document.getElementById('push-cal-selector').style.display='none'">Hủy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ GOALS & DỰ ÁN ══ -->
+    <div id="page-goals" class="page">
+      <div class="goals-header">
+        <h2 class="section-title" style="margin:0">Goals & Dự án dài hạn</h2>
+        <button class="btn-primary" onclick="openGoalModal()">+ Mục tiêu mới</button>
+      </div>
+      <div class="goals-stats" id="goals-stats"></div>
+      <div id="goals-list"></div>
+    </div>
+
+    <!-- ══ AI COACH ══ -->
+    <div id="page-ai" class="page">
+      <h2 class="section-title">AI Coach — Phân tích & Gợi ý</h2>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1.25rem">Dựa trên lý thuyết <strong>Đá Trước, Cát Sau</strong> — phân tích công việc và đưa ra gợi ý thiết thực.</p>
+      <div class="ai-quick-grid">
+        <button class="ai-q-btn" onclick="aiPreset('Phân tích danh sách công việc tuần này, tôi có đang bảo vệ Ô 2 đủ chưa?')">📊 Phân tích tuần</button>
+        <button class="ai-q-btn" onclick="aiPreset('Kiểm tra tỉ lệ Ô 2 so với các ô khác và gợi ý cân bằng')">⚖️ Kiểm tra Ô 2</button>
+        <button class="ai-q-btn" onclick="aiPreset('Gợi ý phân bổ các task theo mức năng lượng cao, trung bình, thấp')">⚡ Phân bổ năng lượng</button>
+        <button class="ai-q-btn" onclick="aiPreset('Tôi đang bị quá tải, giúp tôi quyết định nên cắt việc gì trước')">✂️ Cắt việc thừa</button>
+        <button class="ai-q-btn" onclick="aiPreset('Phân tích Goals dài hạn và gợi ý task Ô 2 nên làm tuần này')">🎯 Task từ Goals</button>
+        <button class="ai-q-btn" onclick="aiPreset('Gợi ý 3 thói quen Ô 2 nên xây dựng dựa trên goals hiện tại')">🌱 Gợi ý thói quen</button>
+      </div>
+      <div class="ai-input-card">
+        <div class="ai-input-row">
+          <input type="text" id="ai-inp" placeholder="Hỏi về quản lý thời gian, ưu tiên, năng lượng..." onkeydown="if(event.key==='Enter')askAI()">
+          <button class="ai-send-btn" id="ai-btn" onclick="askAI()">Hỏi ↗</button>
+        </div>
+        <div class="ai-response" id="ai-resp"></div>
+      </div>
+    </div>
+
+    <!-- ══ LỌ KÝ ỨC ══ -->
+    <div id="page-memory" class="page">
+      <div class="mem-jar-hero">
+        <div class="mem-jar-count" id="mem-count">0</div>
+        <div class="mem-jar-sub">ký ức đã lưu 🫙</div>
+      </div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;text-align:center">Mỗi ngày, ghi lại một điều đáng nhớ — dù nhỏ. Cuối năm, chiếc lọ là bằng chứng bạn đã thật sự sống.</p>
+      <div class="mem-add-card">
+        <div class="mem-add-row">
+          <input type="text" id="mem-inp" placeholder="Hôm nay mình đã..." maxlength="250" onkeydown="if(event.key==='Enter')addMemory()">
+          <button class="mem-save-btn" onclick="addMemory()">Lưu</button>
+        </div>
+      </div>
+      <div id="mem-list"></div>
+    </div>
+
+    <!-- ══ TỔNG KẾT ══ -->
+    <div id="page-review" class="page">
+      <h2 class="section-title" id="review-title">Tổng kết tuần</h2>
+      <div class="review-grid" id="review-bars"></div>
+      <div class="review-insight" id="review-insight"></div>
+
+      <h2 class="section-title" style="margin-top:1.5rem">Tính giờ làm việc thực sự</h2>
+      <div class="hours-card">
+        <div class="hours-section-lbl">Khấu trừ mỗi ngày (× 7)</div>
+        <div class="hours-row"><label>Ngủ (giờ/ngày)</label><input type="number" id="hs" value="7" min="4" max="12" step="0.5" onchange="calcHours()"></div>
+        <div class="hours-row"><label>Ăn uống (giờ/ngày)</label><input type="number" id="he" value="1.5" min="0" max="4" step="0.5" onchange="calcHours()"></div>
+        <div class="hours-row"><label>Di chuyển (giờ/ngày)</label><input type="number" id="hc" value="1" min="0" max="5" step="0.5" onchange="calcHours()"></div>
+        <div class="hours-section-lbl">Cố định trong tuần</div>
+        <div class="hours-row"><label>Học / làm cố định (giờ/tuần)</label><input type="number" id="hf" value="25" min="0" max="80" onchange="calcHours()"></div>
+        <div class="hours-row"><label>Nghỉ ngơi / sinh hoạt (giờ/tuần)</label><input type="number" id="hr" value="10" min="0" max="30" onchange="calcHours()"></div>
+        <div class="hours-result">
+          <span class="hours-result-lbl">Giờ làm việc thực sự còn lại</span>
+          <span class="hours-result-val" id="h-avail">—</span>
+        </div>
+        <div id="h-verdict" style="display:none"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- GOAL MODAL -->
+<div class="modal-bg" id="goal-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title" id="gm-title">Mục tiêu mới</span>
+      <button class="modal-close" onclick="closeGoalModal()">×</button>
+    </div>
+    <div class="modal-form">
+      <div class="form-group"><label>Tiêu đề mục tiêu *</label><input type="text" id="gf-title" placeholder="VD: Hoàn thành IELTS 7.0"></div>
+      <div class="form-group"><label>Mô tả / lý do quan trọng</label><textarea id="gf-desc" placeholder="Tại sao mục tiêu này quan trọng với bạn?"></textarea></div>
+      <div class="modal-form form-row">
+        <div class="form-group"><label>Danh mục</label>
+          <select id="gf-cat">
+            <option value="project">🚀 Dự án</option>
+            <option value="career">💼 Sự nghiệp</option>
+            <option value="learn">📚 Học tập</option>
+            <option value="health">💪 Sức khỏe</option>
+            <option value="finance">💰 Tài chính</option>
+            <option value="relation">❤️ Mối quan hệ</option>
+            <option value="personal">🌟 Cá nhân</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Deadline</label><input type="date" id="gf-deadline"></div>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Milestones</div>
+      <div id="ms-form-list" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;margin-bottom:4px">
+        <input type="text" id="ms-new-text" placeholder="Thêm milestone..." style="flex:1;font-size:13px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif" onkeydown="if(event.key==='Enter')addMsToForm()">
+        <input type="date" id="ms-new-date" style="width:140px;font-size:13px;padding:7px 8px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface2);color:var(--text);font-family:'Inter',sans-serif">
+        <button class="btn-ghost" style="padding:7px 12px;font-size:13px" onclick="addMsToForm()">+ Thêm</button>
+      </div>
+      <input type="hidden" id="gf-id">
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeGoalModal()">Hủy</button>
+      <button class="btn-save" onclick="saveGoal()">Lưu mục tiêu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════
+//  CONFIG — điền thông tin Firebase & GCal
+// ════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+  apiKey: "AIzaSyAwSpceiX8BQsQ7vWgik6Xp0k0h9Rn-wKU",
+  authDomain: "time-management-e3f83.firebaseapp.com",
+  projectId: "time-management-e3f83",
+  storageBucket: "time-management-e3f83.firebasestorage.app",
+  messagingSenderId: "899312121324",
+  appId: "1:899312121324:web:66a0d4b9cb1f9595b93cc9",
+};
+const GCAL_CLIENT_ID = "475638463969-rk3co44qb7nffelq5qcvrv2c8mg9cm9v.apps.googleusercontent.com";
+// ════════════════════════════════════════
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+let CU         = null;   // current user
+let gCalToken  = null;
+let weekOffset = 0;
+let tempMs     = [];
+
+// ── AUTH ──────────────────────────────
+function signInGoogle() {
+  const p = new firebase.auth.GoogleAuthProvider();
+  p.addScope('https://www.googleapis.com/auth/calendar');
+  p.addScope('https://www.googleapis.com/auth/calendar.events');
+  auth.signInWithPopup(p)
+    .then(r => { gCalToken = r.credential?.accessToken || null; if(gCalToken) localStorage.setItem('gct', gCalToken); })
+    .catch(e => toast('Đăng nhập thất bại: ' + e.message));
+}
+function doSignOut() {
+  auth.signOut().then(() => { localStorage.removeItem('gct'); location.reload(); });
+}
+
+auth.onAuthStateChanged(u => {
+  document.getElementById('loading').classList.add('off');
+  if (u) {
+    CU = u;
+    gCalToken = localStorage.getItem('gct') || null;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').classList.add('on');
+    const av = document.getElementById('user-av');
+    if (u.photoURL) av.innerHTML = `<img src="${u.photoURL}" alt="">`;
+    else av.textContent = (u.displayName||'U')[0].toUpperCase();
+    document.getElementById('user-nm').textContent = u.displayName || u.email;
+    boot();
+  } else {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').classList.remove('on');
+  }
+});
+
+function boot() {
+  updateWeekLabel();
+  renderTasks();
+  renderMemories();
+  renderGoals();
+  renderReview();
+  calcHours();
+  // GCal: fetch calendar list (chỉ khi đang ở tab GCal hoặc lazy)
+  if (gCalToken) fetchCalendarList();
+}
+
+// ── FIRESTORE HELPERS ─────────────────
+const col = n => db.collection('users').doc(CU.uid).collection(n);
+
+function weekKey(off) {
+  const d = new Date();
+  d.setDate(d.getDate() - d.getDay() + 1 + off*7);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function weekRangeLabel(off) {
+  const s = new Date(); s.setDate(s.getDate()-s.getDay()+1+off*7);
+  const e = new Date(s); e.setDate(e.getDate()+6);
+  const f = d => `${d.getDate()}/${d.getMonth()+1}`;
+  if (off===0) return `Tuần này · ${f(s)} – ${f(e)}`;
+  if (off===-1) return `Tuần trước · ${f(s)} – ${f(e)}`;
+  if (off===1)  return `Tuần tới · ${f(s)} – ${f(e)}`;
+  return `${f(s)} – ${f(e)}`;
+}
+function updateWeekLabel() { document.getElementById('week-label').textContent = weekRangeLabel(weekOffset); }
+function changeWeek(d) { weekOffset += d; updateWeekLabel(); renderTasks(); }
+function goToday() { weekOffset = 0; updateWeekLabel(); renderTasks(); }
+
+async function getWeek(off) {
+  const k = weekKey(off);
+  const doc = await col('weeks').doc(k).get();
+  return doc.exists ? doc.data() : {q1:[],q2:[],q3:[],q4:[]};
+}
+async function setWeek(off, data) {
+  await col('weeks').doc(weekKey(off)).set(data);
+}
+
+// ── TASKS ─────────────────────────────
+const Q_LABELS = {q1:'Ô 1',q2:'Ô 2',q3:'Ô 3',q4:'Ô 4'};
+
+async function renderTasks() {
+  const data = await getWeek(weekOffset);
+  ['q1','q2','q3','q4'].forEach(q => {
+    buildTaskList(q, data[q]||[]);
+    buildAddForm(q);
+  });
+  buildStats(data);
+  renderGCalPush();
+}
+
+function buildTaskList(q, tasks) {
+  const el = document.getElementById('tl-' + q);
+  if (!tasks.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0 2px">Chưa có việc nào</div>'; return; }
+  el.innerHTML = tasks.map((t,i) => `
+    <div class="task-item">
+      <button class="t-check ${t.done?'done':''}" onclick="toggleTask('${q}',${i})" aria-label="Đánh dấu hoàn thành"></button>
+      <div class="t-body">
+        <div class="t-text ${t.done?'done':''}">${esc(t.text)}</div>
+        <div class="t-meta">
+          ${t.hours ? `<span>⏱ ${t.hours}h</span>` : ''}
+          ${t.date  ? `<span>📅 ${fmtD(t.date)}</span>` : ''}
+          ${t.goalId ? `<span class="goal-tag" style="background:${goalColor(t.goalId,true)};color:${goalColor(t.goalId,false)}">🎯 Goal</span>` : ''}
+          ${t.gcal  ? `<span class="gcal-dot">● GCal</span>` : ''}
+        </div>
+      </div>
+      <div class="t-actions">
+        ${!t.gcal && t.date ? `<button class="t-act-btn" onclick="pushTask('${q}',${i})" title="Đẩy lên GCal">📅</button>` : ''}
+        <button class="t-act-btn" onclick="deleteTask('${q}',${i})" title="Xóa">×</button>
+      </div>
+    </div>`).join('');
+}
+
+function buildAddForm(q) {
+  document.getElementById('af-' + q).innerHTML = `
+    <input type="text" placeholder="Thêm việc..." id="in-${q}" onkeydown="if(event.key==='Enter')addTask('${q}')">
+    <div class="add-form-row">
+      <input type="number" placeholder="h" id="ih-${q}" min="0.5" max="24" step="0.5" title="Số giờ">
+      <input type="date" id="id-${q}">
+      <button class="add-btn" onclick="addTask('${q}')">+ Thêm</button>
+    </div>`;
+}
+
+async function addTask(q) {
+  const txt = document.getElementById('in-'+q)?.value?.trim(); if (!txt) return;
+  const h   = parseFloat(document.getElementById('ih-'+q)?.value)||0;
+  const dt  = document.getElementById('id-'+q)?.value||'';
+  const data = await getWeek(weekOffset);
+  if (!data[q]) data[q]=[];
+  data[q].push({text:txt, hours:h, date:dt, done:false, gcal:false, created:Date.now()});
+  await setWeek(weekOffset, data);
+  renderTasks(); toast('Đã thêm: ' + txt);
+}
+async function toggleTask(q,i) {
+  const data = await getWeek(weekOffset);
+  data[q][i].done = !data[q][i].done;
+  await setWeek(weekOffset, data); renderTasks();
+}
+async function deleteTask(q,i) {
+  const data = await getWeek(weekOffset);
+  data[q].splice(i,1);
+  await setWeek(weekOffset, data); renderTasks();
+}
+
+function buildStats(data) {
+  let tot=0,dn=0,hq2=0,hall=0;
+  ['q1','q2','q3','q4'].forEach(q => (data[q]||[]).forEach(t => {
+    tot++; if(t.done) dn++; hall+=t.hours||0; if(q==='q2') hq2+=t.hours||0;
+  }));
+  const pct = tot ? Math.round(dn/tot*100) : 0;
+  const q2r = hall ? Math.round(hq2/hall*100) : 0;
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-lbl">Tổng việc</div><div class="stat-val">${tot}</div><div class="stat-sub">tuần này</div></div>
+    <div class="stat-card"><div class="stat-lbl">Hoàn thành</div><div class="stat-val">${pct}%</div><div class="stat-sub">${dn}/${tot}</div></div>
+    <div class="stat-card"><div class="stat-lbl">Tổng giờ</div><div class="stat-val">${hall}h</div><div class="stat-sub">ước tính</div></div>
+    <div class="stat-card"><div class="stat-lbl">Tỉ lệ Ô 2</div><div class="stat-val">${q2r}%</div><div class="stat-sub">giờ quan trọng</div></div>`;
+}
+
+// ── GOOGLE CALENDAR — MULTI-CALENDAR ──
+// allCalendars: [{id, summary, backgroundColor, selected}]
+let allCalendars = [];
+let pendingPush = null; // {q, i} chờ user chọn lịch
+
+// Google Calendar color id → hex (dùng khi đẩy event)
+const GCAL_COLOR_MAP = {
+  '1':'#7986CB','2':'#33B679','3':'#8E24AA','4':'#E67C73',
+  '5':'#F6BF26','6':'#F4511E','7':'#039BE5','8':'#616161',
+  '9':'#3F51B5','10':'#0B8043','11':'#D50000'
+};
+
+// ── Fetch danh sách calendar của user
+async function fetchCalendarList() {
+  if (!gCalToken) { toast('Cần đăng nhập lại để cấp quyền GCal'); return; }
+  const el = document.getElementById('cal-list-items');
+  el.innerHTML = '<span style="color:var(--text3)">Đang tải...</span>';
+  try {
+    const r = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=50', {
+      headers: { Authorization: `Bearer ${gCalToken}` }
+    });
+    if (r.status === 401) { el.innerHTML = '<span style="color:var(--coral)">Token hết hạn — đăng xuất và đăng nhập lại.</span>'; return; }
+    const j = await r.json();
+    // Lưu vào allCalendars, mặc định chọn tất cả
+    const saved = JSON.parse(localStorage.getItem('gcal_selected_cals') || '{}');
+    allCalendars = (j.items || []).map(c => ({
+      id: c.id,
+      summary: c.summary || c.id,
+      backgroundColor: c.backgroundColor || '#534AB7',
+      accessRole: c.accessRole,
+      selected: saved[c.id] !== undefined ? saved[c.id] : true
+    }));
+    renderCalendarList();
+    populateCalDropdowns();
+    loadGCalFromSelected();
+  } catch(e) { el.innerHTML = `<span style="color:var(--coral)">Lỗi: ${e.message}</span>`; }
+}
+
+function renderCalendarList() {
+  const el = document.getElementById('cal-list-items');
+  if (!allCalendars.length) { el.innerHTML = '<span style="color:var(--text3)">Không có lịch nào.</span>'; return; }
+  el.innerHTML = allCalendars.map((c, idx) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <input type="checkbox" id="cal-cb-${idx}" ${c.selected?'checked':''} onchange="toggleCalSel(${idx})" style="width:15px;height:15px;accent-color:${c.backgroundColor};cursor:pointer">
+      <span style="width:12px;height:12px;border-radius:50%;background:${c.backgroundColor};flex-shrink:0;display:inline-block"></span>
+      <label for="cal-cb-${idx}" style="font-size:13px;color:var(--text);cursor:pointer;flex:1">${esc(c.summary)}</label>
+      <span style="font-size:11px;color:var(--text3)">${c.accessRole==='owner'?'Của tôi':'Được chia sẻ'}</span>
+    </div>`).join('');
+}
+
+function toggleCalSel(idx) {
+  allCalendars[idx].selected = !allCalendars[idx].selected;
+  // Lưu lựa chọn vào localStorage
+  const saved = {};
+  allCalendars.forEach(c => saved[c.id] = c.selected);
+  localStorage.setItem('gcal_selected_cals', JSON.stringify(saved));
+}
+
+function populateCalDropdowns() {
+  // Điền dropdown cho tạo event và đẩy task
+  const opts = allCalendars
+    .filter(c => c.accessRole === 'owner' || c.accessRole === 'writer')
+    .map(c => `<option value="${esc(c.id)}" style="background:${c.backgroundColor}">${esc(c.summary)}</option>`)
+    .join('');
+  const gnCal = document.getElementById('gn-cal-id');
+  const pushCal = document.getElementById('push-cal-id');
+  if (gnCal) gnCal.innerHTML = opts || '<option value="primary">primary</option>';
+  if (pushCal) pushCal.innerHTML = opts || '<option value="primary">primary</option>';
+}
+
+// ── Load events từ các calendar đang được chọn
+async function loadGCalFromSelected() {
+  if (!gCalToken) return;
+  const activeCals = allCalendars.filter(c => c.selected);
+  if (!activeCals.length) { document.getElementById('gcal-strip').innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Chưa chọn lịch nào. Tick vào ô bên trên rồi bấm Áp dụng.</div>'; return; }
+  document.getElementById('gcal-strip').innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Đang tải lịch...</div>';
+  const now = new Date();
+  const mon = new Date(now); mon.setDate(now.getDate()-now.getDay()+1+weekOffset*7); mon.setHours(0,0,0,0);
+  const sun = new Date(mon); sun.setDate(mon.getDate()+6); sun.setHours(23,59,59,999);
+  try {
+    // Fetch song song từ tất cả calendar được chọn
+    const results = await Promise.all(activeCals.map(async c => {
+      const calId = encodeURIComponent(c.id);
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${mon.toISOString()}&timeMax=${sun.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=100`, {
+        headers: { Authorization: `Bearer ${gCalToken}` }
+      });
+      if (!r.ok) return [];
+      const j = await r.json();
+      // Gắn calColor vào từng event để phân biệt
+      return (j.items || []).map(e => ({ ...e, _calColor: c.backgroundColor, _calName: c.summary }));
+    }));
+    const allEvents = results.flat().sort((a,b) => {
+      const ta = a.start?.dateTime || a.start?.date || '';
+      const tb = b.start?.dateTime || b.start?.date || '';
+      return ta.localeCompare(tb);
+    });
+    renderGCalStrip(mon, allEvents);
+  } catch(e) { document.getElementById('gcal-strip').innerHTML = `<div style="font-size:13px;color:var(--text3)">Lỗi: ${e.message}</div>`; }
+}
+
+// Alias để các nút cũ vẫn hoạt động
+async function loadGCal() {
+  if (!allCalendars.length) await fetchCalendarList();
+  else await loadGCalFromSelected();
+}
+
+function renderGCalStrip(mon, evs) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days = ['T2','T3','T4','T5','T6','T7','CN'];
+  document.getElementById('gcal-strip').innerHTML = Array.from({length:7}, (_, i) => {
+    const d = new Date(mon); d.setDate(mon.getDate()+i);
+    const isT = d.getTime() === today.getTime();
+    const de = evs.filter(e => (e.start?.dateTime||e.start?.date||'').startsWith(d.toISOString().slice(0,10)));
+    return `<div class="day-col ${isT?'today':''}">
+      <div class="day-name">${days[i]}</div>
+      <div class="day-num">${d.getDate()}</div>
+      ${de.slice(0,4).map(e => {
+        const cls = gcalEvClass(e.summary);
+        // Nếu là event GCal thực (không phải từ task), dùng màu calendar
+        const style = cls==='ev-gcal' && e._calColor
+          ? `style="background:${e._calColor}22;border-left:2px solid ${e._calColor};color:${e._calColor};border-radius:0 3px 3px 0"`
+          : ``;
+        const calBadge = e._calName ? ` <span style="opacity:.6;font-size:9px">${esc(e._calName.slice(0,10))}</span>` : '';
+        return `<div class="ev-chip ${cls}" ${style} title="${esc(e.summary||'')} · ${esc(e._calName||'')}">${esc((e.summary||'Event').slice(0,14))}</div>`;
+      }).join('')}
+      ${de.length>4 ? `<div style="font-size:10px;color:var(--text3)">+${de.length-4}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function gcalEvClass(s) {
+  if (!s) return 'ev-gcal';
+  if (s.match(/^\[Ô1\]|^\[Q1\]/)) return 'ev-q1';
+  if (s.match(/^\[Ô2\]|^\[Q2\]/)) return 'ev-q2';
+  if (s.match(/^\[Ô3\]|^\[Q3\]/)) return 'ev-q3';
+  if (s.match(/^\[Ô4\]|^\[Q4\]/)) return 'ev-q4';
+  return 'ev-gcal';
+}
+
+async function renderGCalPush() {
+  const data = await getWeek(weekOffset);
+  const tasks = [];
+  ['q1','q2','q3','q4'].forEach(q => (data[q]||[]).forEach((t,i) => { if(t.date&&!t.gcal) tasks.push({...t,q,i}); }));
+  const el = document.getElementById('gcal-push-list');
+  if (!el) return;
+  if (!tasks.length) { el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:6px 0">Không có task mới. Thêm ngày hẹn cho task trong Ma trận.</div>'; return; }
+  el.innerHTML = tasks.map(t => `
+    <div class="push-row">
+      <span class="q-pill" style="background:${qBg(t.q)};color:${qTx(t.q)}">${Q_LABELS[t.q]}</span>
+      <div class="push-info"><strong>${esc(t.text)}</strong><span>${fmtD(t.date)}${t.hours?' · '+t.hours+'h':''}</span></div>
+      <button class="btn-primary" style="font-size:12px;padding:5px 12px" onclick="openPushSelector('${t.q}',${t.i})">📅 Chọn lịch & đẩy</button>
+    </div>`).join('');
+}
+
+// ── Mở panel chọn calendar trước khi push
+function openPushSelector(q, i) {
+  pendingPush = {q, i};
+  const sel = document.getElementById('push-cal-selector');
+  const info = document.getElementById('push-cal-info');
+  sel.style.display = 'block';
+  sel.scrollIntoView({behavior:'smooth', block:'nearest'});
+  getWeek(weekOffset).then(data => {
+    const t = data[q]?.[i];
+    if (t) info.textContent = `Task: "${t.text}" · ${fmtD(t.date)} · ${t.hours||1}h`;
+  });
+  // Gán nút xác nhận
+  document.getElementById('push-confirm-btn').onclick = confirmPushTask;
+}
+
+async function confirmPushTask() {
+  if (!pendingPush || !gCalToken) return;
+  const {q, i} = pendingPush;
+  const calId = document.getElementById('push-cal-id').value || 'primary';
+  const data = await getWeek(weekOffset);
+  const t = data[q]?.[i];
+  if (!t?.date) { toast('Task cần có ngày hẹn'); return; }
+  const qMap = {q1:'Ô1',q2:'Ô2',q3:'Ô3',q4:'Ô4'};
+  const start = new Date(`${t.date}T09:00:00+07:00`);
+  const end   = new Date(start.getTime() + (t.hours||1)*3600000);
+  const calIdEncoded = encodeURIComponent(calId);
+  try {
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calIdEncoded}/events`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${gCalToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        summary: `[${qMap[q]}] ${t.text}`,
+        description: `${Q_LABELS[q]}\nTạo từ Đá Trước`,
+        start: { dateTime: start.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' },
+        end:   { dateTime: end.toISOString(),   timeZone: 'Asia/Ho_Chi_Minh' },
+        colorId: q==='q1'?'11':q==='q2'?'9':q==='q3'?'7':'8'
+      })
+    });
+    if (!r.ok) throw new Error((await r.json()).error?.message);
+    data[q][i].gcal = true;
+    data[q][i].gcalCalId = calId;
+    await setWeek(weekOffset, data);
+    document.getElementById('push-cal-selector').style.display = 'none';
+    pendingPush = null;
+    renderTasks(); renderGCalPush(); loadGCalFromSelected();
+    toast('✓ Đã tạo event trên Google Calendar!');
+  } catch(e) { toast('Lỗi GCal: ' + e.message); }
+}
+
+// Alias dùng bởi nút 📅 trong task list (ma trận)
+async function pushTask(q, i) { openPushSelector(q, i); }
+
+async function syncFromGCal() {
+  if (!gCalToken) { toast('Cần đăng nhập lại để cấp quyền GCal'); return; }
+  if (!allCalendars.length) { await fetchCalendarList(); return; }
+  toast('Đang đồng bộ...');
+  const activeCals = allCalendars.filter(c => c.selected);
+  const now = new Date();
+  const mon = new Date(now); mon.setDate(now.getDate()-now.getDay()+1+weekOffset*7); mon.setHours(0,0,0,0);
+  const sun = new Date(mon); sun.setDate(mon.getDate()+6); sun.setHours(23,59,59,999);
+  try {
+    const results = await Promise.all(activeCals.map(async c => {
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.id)}/events?timeMin=${mon.toISOString()}&timeMax=${sun.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=100`, {
+        headers: { Authorization: `Bearer ${gCalToken}` }
+      });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return (j.items||[]).map(e=>({...e, _calName:c.summary}));
+    }));
+    const allEvs = results.flat();
+    const data = await getWeek(weekOffset);
+    let added = 0;
+    allEvs.forEach(e => {
+      if (e.summary?.match(/^\[Ô[1-4]\]/)) return;
+      const dt = (e.start?.dateTime||e.start?.date||'').slice(0,10);
+      const exists = ['q1','q2','q3','q4'].some(q => (data[q]||[]).some(t=>t.text===e.summary&&t.date===dt));
+      if (!exists && dt) {
+        data.q3.push({text:`${e.summary||'Event'}${e._calName?' ['+e._calName+']':''}`, hours:1, date:dt, done:false, gcal:true, created:Date.now()});
+        added++;
+      }
+    });
+    if (added) { await setWeek(weekOffset, data); renderTasks(); toast(`✓ Import ${added} event từ GCal vào Ô 3`); }
+    else toast('Không có event mới để import');
+  } catch(e) { toast('Lỗi: ' + e.message); }
+}
+
+async function createGCalEvent() {
+  if (!gCalToken) { toast('Cần đăng nhập lại'); return; }
+  const title  = document.getElementById('gn-title').value.trim();
+  const calId  = document.getElementById('gn-cal-id')?.value || 'primary';
+  const date   = document.getElementById('gn-date').value;
+  const time   = document.getElementById('gn-start').value || '09:00';
+  const dur    = parseInt(document.getElementById('gn-dur').value) || 60;
+  const desc   = document.getElementById('gn-desc').value;
+  if (!title||!date) { toast('Cần có tiêu đề và ngày'); return; }
+  const start = new Date(`${date}T${time}:00+07:00`);
+  const end   = new Date(start.getTime()+dur*60000);
+  try {
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`, {
+      method:'POST', headers:{Authorization:`Bearer ${gCalToken}`,'Content-Type':'application/json'},
+      body:JSON.stringify({summary:title,description:desc,start:{dateTime:start.toISOString(),timeZone:'Asia/Ho_Chi_Minh'},end:{dateTime:end.toISOString(),timeZone:'Asia/Ho_Chi_Minh'}})
+    });
+    if (!r.ok) throw new Error((await r.json()).error?.message);
+    document.getElementById('gn-title').value=''; document.getElementById('gn-date').value=''; document.getElementById('gn-desc').value='';
+    loadGCal(); toast('✓ Đã tạo event!');
+  } catch(e) { toast('Lỗi: '+e.message); }
+}
+
+// ── GOALS ─────────────────────────────
+const CAT = {project:'🚀',career:'💼',learn:'📚',health:'💪',finance:'💰',relation:'❤️',personal:'🌟'};
+const GOAL_COLORS = ['#D85A30','#534AB7','#1D9E75','#EF9F27','#185FA5','#D4537E','#639922'];
+let goalColorMap = {};
+
+function goalColor(id, bg) {
+  if (!goalColorMap[id]) return bg ? '#EEEDFE' : '#534AB7';
+  const c = goalColorMap[id];
+  if (bg) return c + '22';
+  return c;
+}
+
+async function renderGoals() {
+  const snap = await col('goals').orderBy('created','desc').get();
+  const goals = snap.docs.map(d=>({id:d.id,...d.data()}));
+  goals.forEach((g,i) => { goalColorMap[g.id] = GOAL_COLORS[i % GOAL_COLORS.length]; });
+
+  const weekData = await getWeek(weekOffset);
+
+  document.getElementById('goals-stats').innerHTML = [
+    `<div class="stat-card"><div class="stat-lbl">Tổng goals</div><div class="stat-val">${goals.length}</div></div>`,
+    `<div class="stat-card"><div class="stat-lbl">Đang thực hiện</div><div class="stat-val">${goals.filter(g=>!g.done).length}</div></div>`,
+    `<div class="stat-card"><div class="stat-lbl">Hoàn thành</div><div class="stat-val">${goals.filter(g=>g.done).length}</div></div>`,
+  ].join('');
+
+  const el = document.getElementById('goals-list');
+  if (!goals.length) { el.innerHTML = '<div class="empty-state"><div class="ei">🎯</div>Chưa có mục tiêu nào.<br>Thêm Big Goal đầu tiên của bạn.</div>'; return; }
+
+  el.innerHTML = goals.map(g => {
+    const ms = g.milestones||[];
+    const msDone = ms.filter(m=>m.done).length;
+    const pct = ms.length ? Math.round(msDone/ms.length*100) : (g.done?100:0);
+    const color = goalColorMap[g.id] || '#534AB7';
+    const daysLeft = g.deadline ? Math.ceil((new Date(g.deadline)-new Date())/86400000) : null;
+    const daysStr  = daysLeft!==null ? (daysLeft>0?`còn ${daysLeft} ngày`:daysLeft===0?'hôm nay':`quá ${-daysLeft} ngày`) : '';
+
+    const taskLinks = ['q1','q2','q3','q4'].flatMap(q =>
+      (weekData[q]||[]).map((t,i)=>({...t,q,i}))
+    ).filter(t=>t.goalId===g.id);
+
+    return `<div class="goal-card">
+      <div class="goal-card-head">
+        <span class="goal-cat-icon">${CAT[g.category]||'🎯'}</span>
+        <div class="goal-info">
+          <div class="goal-name">${esc(g.title)}${g.done?' <span style="font-size:12px;padding:2px 8px;background:var(--green-lt);color:#0F6E56;border-radius:100px;font-weight:500">✓ Xong</span>':''}</div>
+          <div class="goal-dead">${g.deadline?`Deadline: ${fmtD(g.deadline)}${daysStr?' · '+daysStr:''}`:''}</div>
+        </div>
+        <div class="goal-card-actions">
+          <button class="goal-btn" onclick="openGoalModal('${g.id}')">Sửa</button>
+          <button class="goal-btn" onclick="toggleGoalDone('${g.id}',${!!g.done})">${g.done?'Mở lại':'✓ Xong'}</button>
+          <button class="goal-btn" style="color:var(--coral)" onclick="deleteGoal('${g.id}')">×</button>
+        </div>
+      </div>
+      ${g.description?`<div class="goal-desc">${esc(g.description)}</div>`:''}
+      <div class="pbar-wrap"><div class="pbar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="pbar-lbl">${pct}% · ${msDone}/${ms.length} milestones</div>
+
+      ${ms.length?`
+        <div class="ms-section-lbl">Milestones</div>
+        <div class="ms-flow">
+          ${ms.map((m,i)=>`
+            <div class="ms-step">
+              <div class="ms-node ${m.done?'done':msDone===i?'active':''}" onclick="toggleMs('${g.id}',${i})" style="cursor:pointer">${m.done?'✓':i+1}</div>
+              <div class="ms-lbl ${m.done?'done':msDone===i?'active':''}">${esc(m.text)}</div>
+              ${m.date?`<div class="ms-date-lbl">${fmtD(m.date)}</div>`:''}
+            </div>
+            ${i<ms.length-1?`<div class="ms-arrow ${m.done?'done':''}"></div>`:''}`).join('')}
+        </div>`:''}
+
+      <div class="goal-tasks-section">
+        <div class="goal-tasks-lbl">Tasks tuần này từ goal này</div>
+        ${taskLinks.length ? taskLinks.map(t=>`
+          <div class="goal-task-row">
+            <span class="q-pill" style="background:${qBg(t.q)};color:${qTx(t.q)}">${Q_LABELS[t.q]}</span>
+            <span class="goal-task-name ${t.done?'goal-task-done':''}">${esc(t.text)}</span>
+            <span class="goal-task-meta">${t.date?fmtD(t.date):''}${t.hours?' · '+t.hours+'h':''}</span>
+          </div>`).join('') :
+          '<div style="font-size:12px;color:var(--text3);padding:4px 0">Chưa có task nào tuần này.</div>'}
+        <button class="add-goal-task-btn" onclick="addTaskFromGoal('${g.id}','${esc(g.title)}')">+ Tạo task tuần từ Goal này</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+let tempMsItems = [];
+
+function openGoalModal(editId) {
+  tempMsItems = [];
+  document.getElementById('gf-title').value=''; document.getElementById('gf-desc').value='';
+  document.getElementById('gf-deadline').value=''; document.getElementById('gf-id').value=editId||'';
+  document.getElementById('ms-new-text').value=''; document.getElementById('ms-new-date').value='';
+  if (editId) {
+    document.getElementById('gm-title').textContent='Sửa mục tiêu';
+    col('goals').doc(editId).get().then(d=>{
+      if (!d.exists) return;
+      const g=d.data();
+      document.getElementById('gf-title').value=g.title||'';
+      document.getElementById('gf-desc').value=g.description||'';
+      document.getElementById('gf-deadline').value=g.deadline||'';
+      document.getElementById('gf-cat').value=g.category||'personal';
+      tempMsItems=g.milestones||[];
+      renderMsForm();
+    });
+  } else { document.getElementById('gm-title').textContent='Mục tiêu mới'; renderMsForm(); }
+  document.getElementById('goal-modal').classList.add('on');
+}
+function closeGoalModal() { document.getElementById('goal-modal').classList.remove('on'); }
+
+function addMsToForm() {
+  const txt=document.getElementById('ms-new-text').value.trim(); if(!txt) return;
+  tempMsItems.push({text:txt, date:document.getElementById('ms-new-date').value, done:false});
+  document.getElementById('ms-new-text').value=''; document.getElementById('ms-new-date').value='';
+  renderMsForm();
+}
+function renderMsForm() {
+  document.getElementById('ms-form-list').innerHTML = tempMsItems.map((m,i)=>`
+    <div class="ms-form-item"><span>${esc(m.text)}${m.date?' · '+fmtD(m.date):''}</span><button onclick="tempMsItems.splice(${i},1);renderMsForm()" title="Xóa">×</button></div>`).join('');
+}
+async function saveGoal() {
+  const title = document.getElementById('gf-title').value.trim(); if(!title){toast('Cần có tiêu đề');return;}
+  const editId = document.getElementById('gf-id').value;
+  const data = {title, description:document.getElementById('gf-desc').value.trim(), category:document.getElementById('gf-cat').value, deadline:document.getElementById('gf-deadline').value, milestones:tempMsItems, done:false, updated:Date.now()};
+  if (editId) await col('goals').doc(editId).update(data);
+  else { data.created=Date.now(); await col('goals').add(data); }
+  closeGoalModal(); renderGoals(); toast('✓ Đã lưu mục tiêu');
+}
+async function toggleGoalDone(id, cur) { await col('goals').doc(id).update({done:!cur}); renderGoals(); }
+async function deleteGoal(id) { if(!confirm('Xóa mục tiêu này?')) return; await col('goals').doc(id).delete(); renderGoals(); toast('Đã xóa'); }
+async function toggleMs(goalId, idx) {
+  const d = await col('goals').doc(goalId).get(); if (!d.exists) return;
+  const g=d.data(); g.milestones[idx].done=!g.milestones[idx].done;
+  await col('goals').doc(goalId).update({milestones:g.milestones}); renderGoals();
+}
+async function addTaskFromGoal(goalId, goalTitle) {
+  const d=await col('goals').doc(goalId).get(); if(!d.exists) return;
+  const g=d.data();
+  const nextMs=(g.milestones||[]).find(m=>!m.done);
+  const txt=nextMs?`[${esc(g.title)}] ${nextMs.text}`:`Làm việc cho: ${esc(g.title)}`;
+  const data=await getWeek(weekOffset);
+  data.q2.push({text:txt.replace(/<[^>]+>/g,''),hours:2,date:nextMs?.date||'',done:false,gcal:false,goalId,created:Date.now()});
+  await setWeek(weekOffset,data);
+  showTab('matrix',document.querySelectorAll('.tab')[0]); renderTasks();
+  toast('✓ Đã thêm task vào Ô 2 từ Goal');
+}
+
+// ── AI COACH ─────────────────────────
+function aiPreset(q) { document.getElementById('ai-inp').value=q; askAI(); }
+async function askAI() {
+  const q=document.getElementById('ai-inp').value.trim(); if(!q) return;
+  const btn=document.getElementById('ai-btn'); const res=document.getElementById('ai-resp');
+  btn.disabled=true; btn.innerHTML='<span class="ai-spinner"></span> Đang phân tích...';
+  res.className='ai-response on'; res.textContent='';
+
+  const weekData=await getWeek(weekOffset);
+  const goalsSnap=await col('goals').limit(10).get();
+  const goals=goalsSnap.docs.map(d=>d.data());
+  let ctx='CÔNG VIỆC TUẦN NÀY:\n';
+  const qN={q1:'Ô1(Khẩn&QT)',q2:'Ô2(QT chưa khẩn)',q3:'Ô3(Khẩn)',q4:'Ô4(Sao nhãng)'};
+  ['q1','q2','q3','q4'].forEach(q=>{ const ts=weekData[q]||[]; if(ts.length) ctx+=`${qN[q]}: ${ts.map(t=>`${t.text}(${t.hours||0}h${t.done?',✓':''})`).join(', ')}\n`; });
+  if (goals.length) { ctx+='\nGOALS:\n'; goals.forEach(g=>ctx+=`- ${g.title} [${g.category}] deadline:${g.deadline||'chưa đặt'}${g.done?' (xong)':''}\n`); }
+
+  try {
+    const r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,
+        system:'Bạn là AI Coach chuyên về Lý Thuyết Quản Lý Thời Gian Chủ Đích (Đá Trước, Cát Sau). Nguyên lý: Ma trận Eisenhower (Ô 1-4), Tam Giác Hiệu Suất (Thời gian + Tập trung + Năng lượng), Đầu tư Ô 2 để giảm Ô 1. Trả lời tiếng Việt, súc tích, thực tiễn, dưới 300 từ, đề xuất hành động cụ thể.',
+        messages:[{role:'user',content:`${ctx}\nCâu hỏi: ${q}`}]})
+    });
+    const data=await r.json();
+    res.textContent=data.content?.filter(c=>c.type==='text').map(c=>c.text).join('')||'Không có phản hồi.';
+  } catch(e) { res.textContent='Lỗi kết nối AI: '+e.message; }
+  btn.disabled=false; btn.innerHTML='Hỏi ↗';
+}
+
+// ── MEMORIES ──────────────────────────
+async function renderMemories() {
+  const snap=await col('memories').orderBy('ts','desc').limit(200).get();
+  const items=snap.docs.map(d=>({id:d.id,...d.data()}));
+  document.getElementById('mem-count').textContent=items.length;
+  const el=document.getElementById('mem-list');
+  if (!items.length){el.innerHTML='<div class="empty-state"><div class="ei">🫙</div>Chưa có ký ức nào.<br>Hãy ghi lại điều đáng nhớ hôm nay.</div>';return;}
+  el.innerHTML=items.map(m=>`
+    <div class="mem-item">
+      <span class="mem-date">${m.date||''}</span>
+      <span class="mem-text">${esc(m.text)}</span>
+      <button class="mem-del" onclick="delMemory('${m.id}')">×</button>
+    </div>`).join('');
+}
+async function addMemory() {
+  const txt=document.getElementById('mem-inp').value.trim(); if(!txt) return;
+  const d=new Date();
+  await col('memories').add({text:txt,date:`${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`,ts:Date.now()});
+  document.getElementById('mem-inp').value=''; renderMemories(); toast('Đã lưu vào lọ ký ức 🫙');
+}
+async function delMemory(id) { await col('memories').doc(id).delete(); renderMemories(); }
+
+// ── REVIEW ────────────────────────────
+async function renderReview() {
+  const data=await getWeek(weekOffset);
+  document.getElementById('review-title').textContent='Tổng kết ' + weekRangeLabel(weekOffset);
+  const qN={q1:'Ô 1 — Khẩn & QT',q2:'Ô 2 — QT chưa khẩn',q3:'Ô 3 — Khẩn cấp',q4:'Ô 4 — Sao nhãng'};
+  const clr={q1:'#D85A30',q2:'#534AB7',q3:'#185FA5',q4:'#888780'};
+  let bars='', hrs='';
+  ['q1','q2','q3','q4'].forEach(q=>{
+    const ts=data[q]||[],tot=ts.length,dn=ts.filter(t=>t.done).length,h=ts.reduce((s,t)=>s+(t.hours||0),0);
+    const pct=tot?Math.round(dn/tot*100):0;
+    bars+=`<div class="bar-row"><span class="bar-label" style="font-size:12px">${qN[q]}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${clr[q]}"></div></div><span class="bar-pct">${pct}%</span></div>`;
+    hrs+=`<div class="bar-row"><span class="bar-label" style="font-size:12px">${qN[q]}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.min(h/40*100,100)}%;background:${clr[q]}"></div></div><span class="bar-pct">${h}h</span></div>`;
+  });
+  document.getElementById('review-bars').innerHTML=`
+    <div class="review-card"><div class="review-card-title">Tiến độ hoàn thành</div>${bars}</div>
+    <div class="review-card"><div class="review-card-title">Phân bổ giờ</div>${hrs}</div>`;
+  const q2ts=data.q2||[],q2dn=q2ts.filter(t=>t.done).length;
+  let ins='';
+  if (!q2ts.length) ins='<strong>⚠ Chưa có việc Ô 2.</strong> Ô 2 là khu vực vàng quyết định tương lai — hãy thêm ít nhất 1 việc quan trọng vào lịch.';
+  else if (q2dn===q2ts.length) ins=`<strong>✓ Xuất sắc!</strong> Hoàn thành toàn bộ ${q2ts.length} việc Ô 2. Đây là tuần đầu tư vào tương lai thật sự.`;
+  else ins=`Ô 2: <strong>${q2dn}/${q2ts.length}</strong> việc hoàn thành. Còn ${q2ts.length-q2dn} việc quan trọng chưa xong — bảo vệ chúng ưu tiên tuần tới.`;
+  document.getElementById('review-insight').innerHTML=ins;
+}
+
+// ── HOURS CALC ────────────────────────
+async function calcHours() {
+  const s=parseFloat(document.getElementById('hs')?.value)||7;
+  const e=parseFloat(document.getElementById('he')?.value)||1.5;
+  const c=parseFloat(document.getElementById('hc')?.value)||1;
+  const f=parseFloat(document.getElementById('hf')?.value)||25;
+  const r=parseFloat(document.getElementById('hr')?.value)||10;
+  const avail=Math.max(0,Math.round((168-(s+e+c)*7-f-r)*10)/10);
+  const el=document.getElementById('h-avail'); if(el) el.textContent=avail+'h';
+  const data=await getWeek(weekOffset);
+  let need=0; ['q1','q2','q3','q4'].forEach(q=>(data[q]||[]).forEach(t=>need+=t.hours||0));
+  const vd=document.getElementById('h-verdict');
+  if (!vd) return;
+  if (need>0){
+    vd.style.display='block';
+    if(need>avail){vd.className='hours-verdict h-red';vd.textContent=`⚠ Cần ${need}h nhưng chỉ có ${avail}h. Cắt Ô 4 → giảm Ô 3 → bảo vệ Ô 2.`;}
+    else{vd.className='hours-verdict h-grn';vd.textContent=`✓ Đủ thời gian. Còn ${Math.round((avail-need)*10)/10}h dự phòng.`;}
+  } else vd.style.display='none';
+}
+
+// ── UI HELPERS ────────────────────────
+function showTab(id, btn) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('on');
+  btn.classList.add('active');
+  if (id==='review') renderReview();
+  if (id==='gcal')   { if(!allCalendars.length) fetchCalendarList(); else { renderGCalPush(); loadGCalFromSelected(); } }
+  if (id==='goals')  renderGoals();
+}
+
+function toast(msg) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('on');
+  setTimeout(()=>el.classList.remove('on'),3000);
+}
+function fmtD(s) { if(!s)return''; const p=s.split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0].slice(2)}`:s; }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function qBg(q){return{q1:'#FAECE7',q2:'#EEEDFE',q3:'#E6F1FB',q4:'#F1EFE8'}[q]||'#F1EFE8'}
+function qTx(q){return{q1:'#993C1D',q2:'#3C3489',q3:'#0C447C',q4:'#5F5E5A'}[q]||'#5F5E5A'}
+</script>
+</body>
+</html>
