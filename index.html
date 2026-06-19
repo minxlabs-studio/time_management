@@ -7,6 +7,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
@@ -430,6 +431,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
         <h2 class="section-title" style="margin:0">Lịch tuần từ Google Calendar</h2>
         <div style="display:flex;gap:8px">
+          <button class="btn-primary" onclick="connectGCal()" id="gcal-connect-btn">🔗 Kết nối Google Calendar</button>
           <button class="btn-ghost" onclick="fetchCalendarList()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:4px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             Làm mới
@@ -594,6 +596,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 <script>
 // ════════════════════════════════════════
 //  CONFIG — điền thông tin Firebase & GCal
+//  LƯU Ý: GCAL_CLIENT_ID có thể thuộc một
+//  Google Cloud Project KHÁC với Firebase —
+//  không bắt buộc phải cùng project.
 // ════════════════════════════════════════
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAwSpceiX8BQsQ7vWgik6Xp0k0h9Rn-wKU",
@@ -614,25 +619,58 @@ let CU         = null;   // current user
 let gCalToken  = null;
 let weekOffset = 0;
 let tempMs     = [];
+let tokenClient = null;  // Google Identity Services token client (riêng cho Calendar)
 
-// ── AUTH ──────────────────────────────
+// ── AUTH (Firebase — chỉ để đăng nhập + Firestore) ──
 function signInGoogle() {
   const p = new firebase.auth.GoogleAuthProvider();
-  p.addScope('https://www.googleapis.com/auth/calendar');
-  p.addScope('https://www.googleapis.com/auth/calendar.events');
   auth.signInWithPopup(p)
-    .then(r => { gCalToken = r.credential?.accessToken || null; if(gCalToken) localStorage.setItem('gct', gCalToken); })
     .catch(e => toast('Đăng nhập thất bại: ' + e.message));
 }
 function doSignOut() {
-  auth.signOut().then(() => { localStorage.removeItem('gct'); location.reload(); });
+  auth.signOut().then(() => { localStorage.removeItem('gct'); gCalToken = null; location.reload(); });
+}
+
+// ── GOOGLE CALENDAR TOKEN (Google Identity Services — project riêng) ──
+function initGISTokenClient() {
+  if (typeof google === 'undefined' || !google.accounts) {
+    // Thư viện GIS chưa load xong, thử lại sau
+    setTimeout(initGISTokenClient, 300);
+    return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GCAL_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+    callback: (resp) => {
+      if (resp.error) { toast('Lỗi cấp quyền GCal: ' + resp.error); return; }
+      gCalToken = resp.access_token;
+      localStorage.setItem('gct', gCalToken);
+      // Hết hạn sau resp.expires_in giây (thường 3600s) — lưu thời điểm hết hạn
+      localStorage.setItem('gct_exp', String(Date.now() + (resp.expires_in||3600)*1000));
+      toast('✓ Đã cấp quyền Google Calendar!');
+      allCalendars = []; // reset để fetch lại danh sách lịch
+      if (document.getElementById('page-gcal')?.classList.contains('on')) fetchCalendarList();
+    }
+  });
+}
+
+// Gọi popup xin quyền Calendar (riêng biệt với đăng nhập Firebase)
+function connectGCal() {
+  if (!tokenClient) { toast('Đang khởi tạo, thử lại sau giây lát...'); initGISTokenClient(); return; }
+  tokenClient.requestAccessToken();
+}
+
+function isGCalTokenValid() {
+  const exp = parseInt(localStorage.getItem('gct_exp')||'0');
+  return gCalToken && Date.now() < exp;
 }
 
 auth.onAuthStateChanged(u => {
   document.getElementById('loading').classList.add('off');
   if (u) {
     CU = u;
-    gCalToken = localStorage.getItem('gct') || null;
+    // Khôi phục GCal token nếu còn hạn
+    gCalToken = isGCalTokenValid() ? localStorage.getItem('gct') : null;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').classList.add('on');
     const av = document.getElementById('user-av');
@@ -653,8 +691,8 @@ function boot() {
   renderGoals();
   renderReview();
   calcHours();
-  // GCal: fetch calendar list (chỉ khi đang ở tab GCal hoặc lazy)
-  if (gCalToken) fetchCalendarList();
+  initGISTokenClient();
+  if (isGCalTokenValid()) fetchCalendarList();
 }
 
 // ── FIRESTORE HELPERS ─────────────────
@@ -781,14 +819,14 @@ const GCAL_COLOR_MAP = {
 
 // ── Fetch danh sách calendar của user
 async function fetchCalendarList() {
-  if (!gCalToken) { toast('Cần đăng nhập lại để cấp quyền GCal'); return; }
+  if (!gCalToken) { connectGCal(); return; }
   const el = document.getElementById('cal-list-items');
   el.innerHTML = '<span style="color:var(--text3)">Đang tải...</span>';
   try {
     const r = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=50', {
       headers: { Authorization: `Bearer ${gCalToken}` }
     });
-    if (r.status === 401) { el.innerHTML = '<span style="color:var(--coral)">Token hết hạn — đăng xuất và đăng nhập lại.</span>'; return; }
+    if (r.status === 401) { localStorage.removeItem('gct'); localStorage.removeItem('gct_exp'); gCalToken=null; el.innerHTML = '<span style="color:var(--coral)">Token hết hạn.</span> <button class="btn-ghost" style="font-size:12px;padding:3px 10px" onclick="connectGCal()">Cấp quyền lại</button>'; return; }
     const j = await r.json();
     // Lưu vào allCalendars, mặc định chọn tất cả
     const saved = JSON.parse(localStorage.getItem('gcal_selected_cals') || '{}');
@@ -974,7 +1012,7 @@ async function confirmPushTask() {
 async function pushTask(q, i) { openPushSelector(q, i); }
 
 async function syncFromGCal() {
-  if (!gCalToken) { toast('Cần đăng nhập lại để cấp quyền GCal'); return; }
+  if (!gCalToken) { connectGCal(); return; }
   if (!allCalendars.length) { await fetchCalendarList(); return; }
   toast('Đang đồng bộ...');
   const activeCals = allCalendars.filter(c => c.selected);
@@ -1008,7 +1046,7 @@ async function syncFromGCal() {
 }
 
 async function createGCalEvent() {
-  if (!gCalToken) { toast('Cần đăng nhập lại'); return; }
+  if (!gCalToken) { connectGCal(); return; }
   const title  = document.getElementById('gn-title').value.trim();
   const calId  = document.getElementById('gn-cal-id')?.value || 'primary';
   const date   = document.getElementById('gn-date').value;
