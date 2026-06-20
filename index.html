@@ -37,7 +37,19 @@
   --r-lg:14px;
   --r-xl:20px;
 }
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100vh}
+/* ── FOCUS BLOCK TIMER ── */
+.focus-bar{position:fixed;bottom:0;left:0;right:0;background:var(--purple-dk);color:#fff;display:none;align-items:center;justify-content:space-between;padding:12px 1.5rem;z-index:200;box-shadow:0 -4px 16px rgba(0,0,0,.15)}
+.focus-bar.on{display:flex}
+.focus-bar-info{display:flex;align-items:center;gap:14px;min-width:0}
+.focus-bar-task{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.focus-bar-time{font-size:20px;font-weight:600;font-family:'Inter',monospace;letter-spacing:.02em;flex-shrink:0;min-width:64px}
+.focus-bar-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.focus-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);color:#fff;border-radius:var(--r);padding:6px 14px;font-size:13px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s}
+.focus-btn:hover{background:rgba(255,255,255,.18)}
+.focus-btn-stop{background:var(--coral);border-color:var(--coral)}
+.focus-btn-stop:hover{background:#C04E27}
+.t-act-btn-focus{color:var(--purple)}
+@media (max-width:640px){.focus-bar-task{max-width:120px}.focus-bar{padding:10px 1rem}}
 
 /* ── LOGIN ── */
 #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
@@ -222,6 +234,21 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .ai-send-btn:disabled{opacity:.5;cursor:not-allowed}
 .ai-response{margin-top:12px;padding:14px;background:var(--purple-lt);border-radius:var(--r);font-size:13px;line-height:1.75;color:var(--text);white-space:pre-wrap;display:none}
 .ai-response.on{display:block}
+
+/* ── AI ACTION CARDS (đề xuất / xác nhận) ── */
+.ai-actions-wrap{display:none;flex-direction:column;gap:8px;margin-top:10px}
+.ai-actions-wrap.on{display:flex}
+.ai-action-card{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px}
+.ai-action-icon{font-size:18px;flex-shrink:0}
+.ai-action-body{flex:1;min-width:0}
+.ai-action-title{font-size:13px;font-weight:600;color:var(--text)}
+.ai-action-desc{font-size:12px;color:var(--text2);margin-top:2px}
+.ai-action-btns{display:flex;gap:6px;flex-shrink:0}
+.ai-action-btn{font-size:12px;padding:5px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);cursor:pointer;font-family:'Inter',sans-serif;font-weight:500}
+.ai-action-accept{background:var(--green);color:#fff;border-color:var(--green)}
+.ai-action-accept:hover{background:#177D5D}
+.ai-action-reject{color:var(--text3)}
+.ai-action-reject:hover{background:var(--surface2)}
 .ai-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--purple);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -508,6 +535,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
           <button class="ai-send-btn" id="ai-btn" onclick="askAI()">Hỏi ↗</button>
         </div>
         <div class="ai-response" id="ai-resp"></div>
+        <div class="ai-actions-wrap" id="ai-actions-wrap"></div>
       </div>
     </div>
 
@@ -691,6 +719,7 @@ function boot() {
   renderGoals();
   renderReview();
   calcHours();
+  restoreFocusState();
   initGISTokenClient();
   if (isGCalTokenValid()) fetchCalendarList();
 }
@@ -725,6 +754,39 @@ async function setWeek(off, data) {
   await col('weeks').doc(weekKey(off)).set(data);
 }
 
+// ── Quét TẤT CẢ tuần để lấy task con gắn với 1 Goal (không chỉ tuần đang xem) ──
+// Dùng cho tính % tiến độ Goal chính xác, vì task có thể nằm ở tuần khác.
+let _allWeeksCache = null;
+let _allWeeksCacheTime = 0;
+async function getAllWeeksFlatTasks() {
+  const now = Date.now();
+  if (_allWeeksCache && (now - _allWeeksCacheTime) < 15000) return _allWeeksCache; // cache 15s, tránh đọc Firestore liên tục
+  const snap = await col('weeks').get();
+  const flat = [];
+  snap.docs.forEach(doc => {
+    const wk = doc.data();
+    ['q1','q2','q3','q4'].forEach(q => {
+      (wk[q]||[]).forEach((t,i) => { if (t.goalId) flat.push({...t, q, i, weekId: doc.id}); });
+    });
+  });
+  _allWeeksCache = flat;
+  _allWeeksCacheTime = now;
+  return flat;
+}
+function invalidateWeeksCache() { _allWeeksCache = null; }
+
+// % tiến độ Goal = gộp milestones đã xong + task con (mọi tuần) đã xong
+function computeGoalProgress(goal, allLinkedTasks) {
+  const ms = goal.milestones || [];
+  const msDone = ms.filter(m => m.done).length;
+  const tasksForGoal = allLinkedTasks.filter(t => t.goalId === goal.id);
+  const taskDone = tasksForGoal.filter(t => t.done).length;
+  const total = ms.length + tasksForGoal.length;
+  if (!total) return { pct: goal.done ? 100 : 0, msDone, msTotal: ms.length, taskDone, taskTotal: tasksForGoal.length };
+  const pct = Math.round((msDone + taskDone) / total * 100);
+  return { pct, msDone, msTotal: ms.length, taskDone, taskTotal: tasksForGoal.length };
+}
+
 // ── TASKS ─────────────────────────────
 const Q_LABELS = {q1:'Ô 1',q2:'Ô 2',q3:'Ô 3',q4:'Ô 4'};
 
@@ -748,12 +810,14 @@ function buildTaskList(q, tasks) {
         <div class="t-text ${t.done?'done':''}">${esc(t.text)}</div>
         <div class="t-meta">
           ${t.hours ? `<span>⏱ ${t.hours}h</span>` : ''}
+          ${t.actualMinutes ? `<span>🔥 ${fmtFocusMin(t.actualMinutes)} đã tập trung</span>` : ''}
           ${t.date  ? `<span>📅 ${fmtD(t.date)}</span>` : ''}
           ${t.goalId ? `<span class="goal-tag" style="background:${goalColor(t.goalId,true)};color:${goalColor(t.goalId,false)}">🎯 Goal</span>` : ''}
           ${t.gcal  ? `<span class="gcal-dot">● GCal</span>` : ''}
         </div>
       </div>
       <div class="t-actions">
+        <button class="t-act-btn t-act-btn-focus" data-task-text="${esc(t.text)}" onclick='startFocus("${q}",${i},this.dataset.taskText)' title="Bắt đầu tập trung">▶</button>
         ${!t.gcal && t.date ? `<button class="t-act-btn" onclick="pushTask('${q}',${i})" title="Đẩy lên GCal">📅</button>` : ''}
         <button class="t-act-btn" onclick="deleteTask('${q}',${i})" title="Xóa">×</button>
       </div>
@@ -778,17 +842,124 @@ async function addTask(q) {
   if (!data[q]) data[q]=[];
   data[q].push({text:txt, hours:h, date:dt, done:false, gcal:false, created:Date.now()});
   await setWeek(weekOffset, data);
+  invalidateWeeksCache();
   renderTasks(); toast('Đã thêm: ' + txt);
 }
 async function toggleTask(q,i) {
   const data = await getWeek(weekOffset);
   data[q][i].done = !data[q][i].done;
-  await setWeek(weekOffset, data); renderTasks();
+  await setWeek(weekOffset, data);
+  invalidateWeeksCache();
+  renderTasks();
 }
 async function deleteTask(q,i) {
   const data = await getWeek(weekOffset);
   data[q].splice(i,1);
-  await setWeek(weekOffset, data); renderTasks();
+  await setWeek(weekOffset, data);
+  invalidateWeeksCache();
+  renderTasks();
+}
+
+// ── FOCUS BLOCK TIMER ─────────────────────────────
+// Chỉ 1 task chạy timer cùng lúc, tránh nhầm lẫn.
+// State lưu localStorage để khôi phục nếu user refresh trang giữa lúc đang chạy.
+let focusState = null; // {q, i, text, weekOff, startedAt, elapsedMs, paused, tickHandle}
+
+function fmtFocusMin(mins) {
+  if (mins < 60) return `${mins}p`;
+  const h = Math.floor(mins/60), m = mins%60;
+  return m ? `${h}h${m}p` : `${h}h`;
+}
+function fmtFocusClock(ms) {
+  const totalSec = Math.floor(ms/1000);
+  const m = Math.floor(totalSec/60), s = totalSec%60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function startFocus(q, i, text) {
+  if (focusState) { toast('Đang có 1 phiên tập trung khác — hãy hoàn tất trước.'); return; }
+  focusState = { q, i, text, weekOff: weekOffset, startedAt: Date.now(), elapsedMs: 0, paused: false };
+  persistFocusState();
+  document.getElementById('focus-bar-task').textContent = text;
+  document.getElementById('focus-bar').classList.add('on');
+  document.getElementById('focus-btn-pause').textContent = '⏸ Tạm dừng';
+  runFocusTick();
+  toast('▶ Bắt đầu tập trung: ' + text);
+}
+
+function runFocusTick() {
+  if (focusState.tickHandle) clearInterval(focusState.tickHandle);
+  focusState.tickHandle = setInterval(() => {
+    if (!focusState || focusState.paused) return;
+    const liveMs = focusState.elapsedMs + (Date.now() - focusState.startedAt);
+    document.getElementById('focus-bar-time').textContent = fmtFocusClock(liveMs);
+  }, 1000);
+}
+
+function toggleFocusPause() {
+  if (!focusState) return;
+  if (focusState.paused) {
+    focusState.startedAt = Date.now();
+    focusState.paused = false;
+    document.getElementById('focus-btn-pause').textContent = '⏸ Tạm dừng';
+    toast('▶ Tiếp tục');
+  } else {
+    focusState.elapsedMs += Date.now() - focusState.startedAt;
+    focusState.paused = true;
+    document.getElementById('focus-btn-pause').textContent = '▶ Tiếp tục';
+    toast('⏸ Đã tạm dừng');
+  }
+  persistFocusState();
+}
+
+async function stopFocus() {
+  if (!focusState) return;
+  const finalMs = focusState.paused ? focusState.elapsedMs : focusState.elapsedMs + (Date.now() - focusState.startedAt);
+  const minutes = Math.max(1, Math.round(finalMs/60000)); // tối thiểu 1 phút để tránh log rác do bấm nhịu
+
+  const { q, i, text, weekOff } = focusState;
+  clearInterval(focusState.tickHandle);
+
+  try {
+    const data = await getWeek(weekOff);
+    if (data[q] && data[q][i]) {
+      data[q][i].actualMinutes = (data[q][i].actualMinutes || 0) + minutes;
+      await setWeek(weekOff, data);
+      invalidateWeeksCache();
+    }
+    await col('focusSessions').add({
+      taskText: text, minutes, q, weekOff,
+      finishedAt: Date.now(), created: Date.now()
+    });
+  } catch(e) {
+    console.error('Lỗi lưu focus session:', e);
+    toast('⚠️ Có lỗi khi lưu, nhưng phiên tập trung vẫn được tính ' + minutes + ' phút');
+  }
+
+  focusState = null;
+  localStorage.removeItem('focus_state');
+  document.getElementById('focus-bar').classList.remove('on');
+  toast(`✓ Hoàn tất ${minutes} phút tập trung: ${text}`);
+  renderTasks();
+  if (document.getElementById('page-goals')?.classList.contains('on')) renderGoals();
+}
+
+function persistFocusState() {
+  if (!focusState) { localStorage.removeItem('focus_state'); return; }
+  const { tickHandle, ...toSave } = focusState;
+  localStorage.setItem('focus_state', JSON.stringify(toSave));
+}
+
+function restoreFocusState() {
+  const raw = localStorage.getItem('focus_state');
+  if (!raw) return;
+  try {
+    focusState = JSON.parse(raw);
+    document.getElementById('focus-bar-task').textContent = focusState.text;
+    document.getElementById('focus-bar').classList.add('on');
+    document.getElementById('focus-btn-pause').textContent = focusState.paused ? '▶ Tiếp tục' : '⏸ Tạm dừng';
+    runFocusTick();
+  } catch(e) { localStorage.removeItem('focus_state'); }
 }
 
 function buildStats(data) {
@@ -1085,6 +1256,7 @@ async function renderGoals() {
   goals.forEach((g,i) => { goalColorMap[g.id] = GOAL_COLORS[i % GOAL_COLORS.length]; });
 
   const weekData = await getWeek(weekOffset);
+  const allLinkedTasks = await getAllWeeksFlatTasks(); // task con từ MỌI tuần, dùng để tính % chính xác
 
   document.getElementById('goals-stats').innerHTML = [
     `<div class="stat-card"><div class="stat-lbl">Tổng goals</div><div class="stat-val">${goals.length}</div></div>`,
@@ -1097,8 +1269,9 @@ async function renderGoals() {
 
   el.innerHTML = goals.map(g => {
     const ms = g.milestones||[];
-    const msDone = ms.filter(m=>m.done).length;
-    const pct = ms.length ? Math.round(msDone/ms.length*100) : (g.done?100:0);
+    const msDone = ms.filter(m=>m.done).length; // dùng để xác định node milestone đang "active" trong UI flow
+    const prog = computeGoalProgress(g, allLinkedTasks);
+    const pct = prog.pct;
     const color = goalColorMap[g.id] || '#534AB7';
     const daysLeft = g.deadline ? Math.ceil((new Date(g.deadline)-new Date())/86400000) : null;
     const daysStr  = daysLeft!==null ? (daysLeft>0?`còn ${daysLeft} ngày`:daysLeft===0?'hôm nay':`quá ${-daysLeft} ngày`) : '';
@@ -1122,7 +1295,7 @@ async function renderGoals() {
       </div>
       ${g.description?`<div class="goal-desc">${esc(g.description)}</div>`:''}
       <div class="pbar-wrap"><div class="pbar-fill" style="width:${pct}%;background:${color}"></div></div>
-      <div class="pbar-lbl">${pct}% · ${msDone}/${ms.length} milestones</div>
+      <div class="pbar-lbl">${pct}%${prog.msTotal?` · ${prog.msDone}/${prog.msTotal} milestones`:''}${prog.taskTotal?` · ${prog.taskDone}/${prog.taskTotal} task con`:''}</div>
 
       ${ms.length?`
         <div class="ms-section-lbl">Milestones</div>
@@ -1213,6 +1386,7 @@ async function addTaskFromGoal(goalId, goalTitle) {
 }
 
 // ── AI COACH ─────────────────────────
+let goalTitleCache = {}; // goalId -> title, dùng để hiển thị tên Goal đúng trong AI action card
 function aiPreset(question) {
   document.getElementById('ai-inp').value = question;
   askAI();
@@ -1229,11 +1403,12 @@ async function askAI() {
   btn.innerHTML = '<span class="ai-spinner"></span> Đang phân tích...';
   res.className = 'ai-response on';
   res.textContent = '';
+  renderAiActionCards([]);
 
   try {
     const weekData = await getWeek(weekOffset);
     const goalsSnap = await col('goals').limit(10).get();
-    const goals = goalsSnap.docs.map(d => d.data());
+    const goals = goalsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
     let ctx = 'CÔNG VIỆC TUẦN NÀY:\n';
 
@@ -1262,12 +1437,19 @@ async function askAI() {
       });
     }
 
+    // goalsBrief: id thật kèm tên, để AI dùng đúng goalId khi đề xuất add_milestone (không tự bịa ID)
+    const goalsBrief = goals.length
+      ? goals.map(g => `${g.id}="${g.title}"`).join('; ')
+      : '';
+    goals.forEach(g => { goalTitleCache[g.id] = g.title; }); // dùng để hiển thị tên Goal trong action card
+
     const r = await fetch('/api/ai-coach', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         question,
-        context: ctx
+        context: ctx,
+        goalsBrief
       })
     });
 
@@ -1282,14 +1464,109 @@ async function askAI() {
       throw new Error(data.error || `AI Coach API error ${r.status}`);
     }
 
-    res.textContent = data.text || 'Không có phản hồi.';
+    res.textContent = data.text || (data.actions?.length ? '' : 'Không có phản hồi.');
+    renderAiActionCards(data.actions || []);
   } catch (e) {
     console.error('AI fetch failed:', e);
     res.textContent = 'Lỗi kết nối AI: ' + e.message;
+    renderAiActionCards([]);
   } finally {
     btn.disabled = false;
     btn.innerHTML = 'Hỏi ↗';
   }
+}
+
+// ── AI ACTION CARDS — đề xuất / xác nhận ─────────────────
+// AI chỉ ĐỀ XUẤT qua các "tool" đã định nghĩa ở backend. Frontend hiển thị
+// thành thẻ, KHÔNG thực thi gì cho tới khi user bấm "✓ Thêm". Đây là lớp an toàn
+// bắt buộc — AI không có quyền tự sửa dữ liệu Firestore.
+let pendingAiActions = [];
+
+function renderAiActionCards(actions) {
+  pendingAiActions = actions;
+  const wrap = document.getElementById('ai-actions-wrap');
+  if (!actions.length) { wrap.innerHTML = ''; wrap.classList.remove('on'); return; }
+
+  wrap.classList.add('on');
+  wrap.innerHTML = actions.map((a, idx) => renderActionCard(a, idx)).join('');
+}
+
+function renderActionCard(a, idx) {
+  if (a.tool === 'add_task') {
+    const qLabel = Q_LABELS[a.args.quadrant] || a.args.quadrant;
+    return `
+      <div class="ai-action-card" id="ai-action-${idx}">
+        <div class="ai-action-icon">➕</div>
+        <div class="ai-action-body">
+          <div class="ai-action-title">Thêm task vào ${esc(qLabel)}</div>
+          <div class="ai-action-desc">${esc(a.args.text)}${a.args.hours ? ` · ${a.args.hours}h` : ''}</div>
+        </div>
+        <div class="ai-action-btns">
+          <button class="ai-action-btn ai-action-accept" onclick="acceptAiAction(${idx})">✓ Thêm</button>
+          <button class="ai-action-btn ai-action-reject" onclick="rejectAiAction(${idx})">✗</button>
+        </div>
+      </div>`;
+  }
+  if (a.tool === 'add_milestone') {
+    const goalTitle = goalTitleCache[a.args.goalId] || 'Goal';
+    return `
+      <div class="ai-action-card" id="ai-action-${idx}">
+        <div class="ai-action-icon">🎯</div>
+        <div class="ai-action-body">
+          <div class="ai-action-title">Thêm milestone vào "${esc(goalTitle)}"</div>
+          <div class="ai-action-desc">${esc(a.args.text)}${a.args.date ? ` · ${fmtD(a.args.date)}` : ''}</div>
+        </div>
+        <div class="ai-action-btns">
+          <button class="ai-action-btn ai-action-accept" onclick="acceptAiAction(${idx})">✓ Thêm</button>
+          <button class="ai-action-btn ai-action-reject" onclick="rejectAiAction(${idx})">✗</button>
+        </div>
+      </div>`;
+  }
+  return ''; // tool lạ/không nhận diện được -> bỏ qua an toàn, không hiển thị gì
+}
+
+async function acceptAiAction(idx) {
+  const a = pendingAiActions[idx];
+  if (!a) return;
+  try {
+    if (a.tool === 'add_task') {
+      const data = await getWeek(weekOffset);
+      const q = a.args.quadrant;
+      if (!data[q]) data[q] = [];
+      data[q].push({
+        text: a.args.text,
+        hours: parseFloat(a.args.hours) || 0,
+        date: '',
+        done: false,
+        gcal: false,
+        goalId: a.args.goalId || null,
+        created: Date.now()
+      });
+      await setWeek(weekOffset, data);
+      invalidateWeeksCache();
+      renderTasks();
+      toast('✓ Đã thêm task: ' + a.args.text);
+    } else if (a.tool === 'add_milestone') {
+      const ref = col('goals').doc(a.args.goalId);
+      const d = await ref.get();
+      if (!d.exists) { toast('⚠️ Không tìm thấy Goal này'); return; }
+      const g = d.data();
+      const ms = g.milestones || [];
+      ms.push({ text: a.args.text, date: a.args.date || '', done: false });
+      await ref.update({ milestones: ms });
+      invalidateWeeksCache();
+      renderGoals();
+      toast('✓ Đã thêm milestone vào: ' + (g.title || 'Goal'));
+    }
+  } catch (e) {
+    console.error('Lỗi thực thi AI action:', e);
+    toast('⚠️ Có lỗi khi thêm: ' + e.message);
+  }
+  document.getElementById('ai-action-' + idx)?.remove();
+}
+
+function rejectAiAction(idx) {
+  document.getElementById('ai-action-' + idx)?.remove();
 }
 
 // ── MEMORIES ──────────────────────────
@@ -1379,5 +1656,18 @@ function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function qBg(q){return{q1:'#FAECE7',q2:'#EEEDFE',q3:'#E6F1FB',q4:'#F1EFE8'}[q]||'#F1EFE8'}
 function qTx(q){return{q1:'#993C1D',q2:'#3C3489',q3:'#0C447C',q4:'#5F5E5A'}[q]||'#5F5E5A'}
 </script>
+<!-- ── FOCUS BLOCK TIMER BAR ── -->
+<div class="focus-bar" id="focus-bar">
+  <div class="focus-bar-info">
+    <span style="font-size:16px">🎯</span>
+    <span class="focus-bar-task" id="focus-bar-task">—</span>
+  </div>
+  <div class="focus-bar-time" id="focus-bar-time">00:00</div>
+  <div class="focus-bar-actions">
+    <button class="focus-btn" id="focus-btn-pause" onclick="toggleFocusPause()">⏸ Tạm dừng</button>
+    <button class="focus-btn focus-btn-stop" onclick="stopFocus()">⏹ Hoàn tất</button>
+  </div>
+</div>
+
 </body>
 </html>
