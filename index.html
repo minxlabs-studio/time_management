@@ -1403,6 +1403,9 @@ async function importEventAsTask(destQ) {
   renderTasks();
   toast(`✓ Đã thêm "${ev.summary||'Event'}" vào ${Q_LABELS[destQ]}`);
 }
+
+function renderGCalGrid(mon, evs) {
+  _lastGcalMon = mon; _lastGcalEvents = evs;
   const wrap = document.getElementById('gcal-grid-wrap');
   const days = ['T2','T3','T4','T5','T6','T7','CN'];
   const today = new Date(); today.setHours(0,0,0,0);
