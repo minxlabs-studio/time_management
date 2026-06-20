@@ -640,7 +640,7 @@ function initGISTokenClient() {
   }
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GCAL_CLIENT_ID,
-    scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+    scope: 'https://www.googleapis.com/auth/calendar.events',
     callback: (resp) => {
       if (resp.error) { toast('Lỗi cấp quyền GCal: ' + resp.error); return; }
       gCalToken = resp.access_token;
