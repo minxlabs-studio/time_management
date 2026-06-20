@@ -12,6 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Roboto','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;background:var(--bg);color:var(--text)}
 :root{
   --bg:#EEF1F5;
   --surface:#FFFFFF;
@@ -116,33 +117,43 @@
 .stat-sub{font-size:12px;color:var(--text3);margin-top:4px}
 
 /* ── MATRIX GRID ── */
-.matrix-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.quadrant{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
-.quad-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.quad-title{font-size:13px;font-weight:600}
+.matrix-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.quadrant{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;display:flex;flex-direction:column;transition:border-color .15s,box-shadow .15s}
+.quadrant.drag-over{border-color:var(--purple);box-shadow:0 0 0 2px var(--purple-lt)}
+.quad-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
+.quad-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.q1 .quad-icon{background:var(--coral-lt)}
+.q2 .quad-icon{background:var(--green-lt)}
+.q3 .quad-icon{background:var(--blue-lt)}
+.q4 .quad-icon{background:var(--gray-lt)}
+.quad-head-text{flex:1;min-width:0}
+.quad-title{font-size:14px;font-weight:600;line-height:1.3}
+.quad-sub{font-size:11px;color:var(--text3);margin-top:2px}
 .q1 .quad-title{color:#D93025}
 .q2 .quad-title{color:#1E8E3E}
 .q3 .quad-title{color:#1A73E8}
 .q4 .quad-title{color:var(--text2)}
-.quad-badge{font-size:11px;padding:3px 9px;border-radius:100px;font-weight:500}
+.quad-badge{font-size:11px;padding:4px 10px;border-radius:100px;font-weight:600;flex-shrink:0;white-space:nowrap}
 .b1{background:var(--coral-lt);color:#D93025}
 .b2{background:var(--green-lt);color:#1E8E3E}
 .b3{background:var(--blue-lt);color:#1A73E8}
 .b4{background:var(--gray-lt);color:var(--text2)}
+.quad-tasks{flex:1;min-height:40px}
 
 /* ── TASK LIST ── */
-.task-item{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
-.task-item:last-of-type{border-bottom:none}
-.t-check{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border2);cursor:pointer;flex-shrink:0;margin-top:1px;background:none;display:flex;align-items:center;justify-content:center;padding:0}
+.task-item{display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;background:var(--surface);transition:box-shadow .15s,border-color .15s,opacity .15s;cursor:grab}
+.task-item:hover{border-color:var(--border2);box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.task-item.dragging{opacity:.4;cursor:grabbing}
+.t-check{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--border2);cursor:pointer;flex-shrink:0;margin-top:1px;background:none;display:flex;align-items:center;justify-content:center;padding:0}
 .t-check.done{background:var(--green);border-color:var(--green)}
-.t-check.done::after{content:'✓';font-size:10px;color:#fff;font-weight:700}
+.t-check.done::after{content:'✓';font-size:11px;color:#fff;font-weight:700}
 .t-body{flex:1;min-width:0}
 .t-text{font-size:13px;color:var(--text);line-height:1.4}
 .t-text.done{text-decoration:line-through;color:var(--text3)}
-.t-meta{display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap}
+.t-meta{display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap}
 .t-meta span{font-size:11px;color:var(--text3)}
 .t-meta .gcal-dot{color:var(--blue);font-weight:500}
-.t-meta .goal-tag{padding:1px 5px;border-radius:3px;font-size:10px;font-weight:500}
+.t-meta .goal-tag{padding:1px 6px;border-radius:4px;font-size:10px;font-weight:500}
 .t-actions{display:flex;gap:3px;flex-shrink:0}
 .t-act-btn{background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--text3);font-size:12px;padding:3px 7px;font-family:'Roboto',sans-serif}
 .t-act-btn:hover{background:var(--surface2);color:var(--text)}
@@ -193,6 +204,8 @@
 .day-name{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
 .day-num{font-size:22px;font-weight:400;color:var(--text);margin-bottom:8px;line-height:1}
 .ev-chip{font-size:11px;padding:3px 7px;border-radius:4px;margin-bottom:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:100%}
+.ev-chip[data-clickable]{cursor:pointer;transition:filter .15s}
+.ev-chip[data-clickable]:hover{filter:brightness(.95)}
 .ev-q1{background:var(--coral-lt);color:#D93025}
 .ev-q2{background:var(--purple-lt);color:#26215C}
 .ev-q3{background:var(--blue-lt);color:#1A73E8}
@@ -327,6 +340,8 @@
 
 /* ── MODAL ── */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;align-items:center;justify-content:center}
+.import-q-btn{padding:12px 10px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--surface);cursor:pointer;font-size:12px;font-weight:600;font-family:'Roboto',sans-serif;text-align:left;transition:background .15s}
+.import-q-btn:hover{background:var(--surface2)}
 .modal-bg.on{display:flex}
 .modal{background:var(--surface);border-radius:var(--r-xl);padding:1.5rem;width:500px;max-width:95vw;max-height:85vh;overflow-y:auto}
 .modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
@@ -474,24 +489,52 @@
       <div class="stats-grid" id="stats-grid"></div>
 
       <div class="matrix-grid">
-        <div class="quadrant q1">
-          <div class="quad-head"><span class="quad-title">Ô 1 — Khẩn cấp & quan trọng</span><span class="quad-badge b1">Làm ngay</span></div>
-          <div id="tl-q1"></div>
+        <div class="quadrant q1" ondragover="onQuadDragOver(event,'q1')" ondragleave="onQuadDragLeave(event)" ondrop="onQuadDrop(event,'q1')">
+          <div class="quad-head">
+            <div class="quad-icon">🔥</div>
+            <div class="quad-head-text">
+              <div class="quad-title">Ô 1 — Khẩn cấp & quan trọng</div>
+              <div class="quad-sub">Làm ngay, không trì hoãn</div>
+            </div>
+            <span class="quad-badge b1">Làm ngay</span>
+          </div>
+          <div class="quad-tasks" id="tl-q1"></div>
           <div class="add-form" id="af-q1"></div>
         </div>
-        <div class="quadrant q2">
-          <div class="quad-head"><span class="quad-title">Ô 2 — Quan trọng, chưa khẩn</span><span class="quad-badge b2">🪨 Bảo vệ</span></div>
-          <div id="tl-q2"></div>
+        <div class="quadrant q2" ondragover="onQuadDragOver(event,'q2')" ondragleave="onQuadDragLeave(event)" ondrop="onQuadDrop(event,'q2')">
+          <div class="quad-head">
+            <div class="quad-icon">🪨</div>
+            <div class="quad-head-text">
+              <div class="quad-title">Ô 2 — Quan trọng, chưa khẩn</div>
+              <div class="quad-sub">Đầu tư ở đây để giảm Ô 1</div>
+            </div>
+            <span class="quad-badge b2">Bảo vệ</span>
+          </div>
+          <div class="quad-tasks" id="tl-q2"></div>
           <div class="add-form" id="af-q2"></div>
         </div>
-        <div class="quadrant q3">
-          <div class="quad-head"><span class="quad-title">Ô 3 — Khẩn cấp, ít quan trọng</span><span class="quad-badge b3">Giao / giảm</span></div>
-          <div id="tl-q3"></div>
+        <div class="quadrant q3" ondragover="onQuadDragOver(event,'q3')" ondragleave="onQuadDragLeave(event)" ondrop="onQuadDrop(event,'q3')">
+          <div class="quad-head">
+            <div class="quad-icon">⚡</div>
+            <div class="quad-head-text">
+              <div class="quad-title">Ô 3 — Khẩn cấp, ít quan trọng</div>
+              <div class="quad-sub">Giao việc hoặc giảm thiểu</div>
+            </div>
+            <span class="quad-badge b3">Giao / giảm</span>
+          </div>
+          <div class="quad-tasks" id="tl-q3"></div>
           <div class="add-form" id="af-q3"></div>
         </div>
-        <div class="quadrant q4">
-          <div class="quad-head"><span class="quad-title">Ô 4 — Không khẩn, ít quan trọng</span><span class="quad-badge b4">Hạn chế</span></div>
-          <div id="tl-q4"></div>
+        <div class="quadrant q4" ondragover="onQuadDragOver(event,'q4')" ondragleave="onQuadDragLeave(event)" ondrop="onQuadDrop(event,'q4')">
+          <div class="quad-head">
+            <div class="quad-icon">🌫️</div>
+            <div class="quad-head-text">
+              <div class="quad-title">Ô 4 — Không khẩn, ít quan trọng</div>
+              <div class="quad-sub">Hạn chế tối đa</div>
+            </div>
+            <span class="quad-badge b4">Hạn chế</span>
+          </div>
+          <div class="quad-tasks" id="tl-q4"></div>
           <div class="add-form" id="af-q4"></div>
         </div>
       </div>
@@ -629,6 +672,31 @@
     </div>
 
   </main>
+  </div>
+</div>
+
+<!-- IMPORT EVENT → TASK MODAL -->
+<div class="modal-bg" id="import-ev-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="modal-title">Thêm event vào Ma trận</span>
+      <button class="modal-close" onclick="closeEventImport()">×</button>
+    </div>
+    <div class="modal-form">
+      <div style="background:var(--surface2);border-radius:var(--r);padding:12px;margin-bottom:4px">
+        <div style="font-size:14px;font-weight:600;color:var(--text)" id="import-ev-title">—</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:3px" id="import-ev-when"></div>
+      </div>
+      <div class="form-group">
+        <label>Chọn ô để thêm task này vào:</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+          <button class="import-q-btn" style="border-color:#D93025;color:#D93025" onclick="importEventAsTask('q1')">🔥 Ô 1 — Khẩn & QT</button>
+          <button class="import-q-btn" style="border-color:#1E8E3E;color:#1E8E3E" onclick="importEventAsTask('q2')">🪨 Ô 2 — QT chưa khẩn</button>
+          <button class="import-q-btn" style="border-color:#1A73E8;color:#1A73E8" onclick="importEventAsTask('q3')">⚡ Ô 3 — Khẩn, ít QT</button>
+          <button class="import-q-btn" style="border-color:var(--border2);color:var(--text2)" onclick="importEventAsTask('q4')">🌫️ Ô 4 — Hạn chế</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -853,9 +921,10 @@ async function renderTasks() {
 
 function buildTaskList(q, tasks) {
   const el = document.getElementById('tl-' + q);
-  if (!tasks.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0 2px">Chưa có việc nào</div>'; return; }
+  if (!tasks.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 4px">Chưa có việc nào — kéo task vào đây hoặc thêm bên dưới</div>'; return; }
   el.innerHTML = tasks.map((t,i) => `
-    <div class="task-item">
+    <div class="task-item" draggable="true" data-q="${q}" data-i="${i}"
+         ondragstart="onTaskDragStart(event,'${q}',${i})" ondragend="onTaskDragEnd(event)">
       <button class="t-check ${t.done?'done':''}" onclick="toggleTask('${q}',${i})" aria-label="Đánh dấu hoàn thành"></button>
       <div class="t-body">
         <div class="t-text ${t.done?'done':''}">${esc(t.text)}</div>
@@ -873,6 +942,48 @@ function buildTaskList(q, tasks) {
         <button class="t-act-btn" onclick="deleteTask('${q}',${i})" title="Xóa">×</button>
       </div>
     </div>`).join('');
+}
+
+// ── DRAG & DROP: kéo task giữa 4 ô ─────────────────
+let dragSource = null; // {q, i}
+
+function onTaskDragStart(ev, q, i) {
+  dragSource = { q, i };
+  ev.currentTarget.classList.add('dragging');
+  ev.dataTransfer.effectAllowed = 'move';
+  // Firefox cần setData mới cho phép kéo
+  ev.dataTransfer.setData('text/plain', `${q}:${i}`);
+}
+function onTaskDragEnd(ev) {
+  ev.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.quadrant.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+function onQuadDragOver(ev, q) {
+  ev.preventDefault(); // bắt buộc để cho phép drop
+  ev.dataTransfer.dropEffect = 'move';
+  ev.currentTarget.classList.add('drag-over');
+}
+function onQuadDragLeave(ev) {
+  // chỉ bỏ highlight khi rời hẳn quadrant (không phải di chuyển qua phần tử con)
+  if (!ev.currentTarget.contains(ev.relatedTarget)) ev.currentTarget.classList.remove('drag-over');
+}
+async function onQuadDrop(ev, destQ) {
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drag-over');
+  if (!dragSource) return;
+  const { q: srcQ, i: srcI } = dragSource;
+  dragSource = null;
+  if (srcQ === destQ) return; // thả lại đúng ô cũ -> không làm gì
+
+  const data = await getWeek(weekOffset);
+  if (!data[srcQ] || !data[srcQ][srcI]) return;
+  const [moved] = data[srcQ].splice(srcI, 1); // lấy task ra khỏi ô nguồn
+  if (!data[destQ]) data[destQ] = [];
+  data[destQ].push(moved); // thêm vào cuối ô đích
+  await setWeek(weekOffset, data);
+  invalidateWeeksCache();
+  renderTasks();
+  toast(`Đã chuyển sang ${Q_LABELS[destQ]}`);
 }
 
 function buildAddForm(q) {
@@ -905,6 +1016,27 @@ async function toggleTask(q,i) {
 }
 async function deleteTask(q,i) {
   const data = await getWeek(weekOffset);
+  const task = data[q] && data[q][i];
+  if (!task) return;
+
+  // Nếu task có liên kết event GCal -> hỏi có xóa luôn event trên Google Calendar không
+  if (task.gcalEventId && gCalToken) {
+    const alsoDeleteGCal = confirm(`Task này liên kết với 1 event trên Google Calendar.\n\nOK = Xóa cả task và event GCal\nCancel = Chỉ xóa task trong app (giữ event GCal)`);
+    if (alsoDeleteGCal) {
+      try {
+        const calId = encodeURIComponent(task.gcalCalId || 'primary');
+        const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${task.gcalEventId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${gCalToken}` }
+        });
+        if (r.ok || r.status === 410) toast('✓ Đã xóa event trên Google Calendar');
+        else toast('⚠️ Không xóa được event GCal (status ' + r.status + '), nhưng task đã xóa khỏi app');
+      } catch(e) {
+        toast('⚠️ Lỗi xóa event GCal: ' + e.message + ' — task vẫn được xóa khỏi app');
+      }
+    }
+  }
+
   data[q].splice(i,1);
   await setWeek(weekOffset, data);
   invalidateWeeksCache();
@@ -1133,7 +1265,7 @@ async function loadGCalFromSelected() {
       if (!r.ok) return [];
       const j = await r.json();
       // Gắn calColor vào từng event để phân biệt
-      return (j.items || []).map(e => ({ ...e, _calColor: c.backgroundColor, _calName: c.summary }));
+      return (j.items || []).map(e => ({ ...e, _calColor: c.backgroundColor, _calName: c.summary, _calId: c.id }));
     }));
     const allEvents = results.flat().sort((a,b) => {
       const ta = a.start?.dateTime || a.start?.date || '';
@@ -1169,7 +1301,7 @@ function renderGCalStrip(mon, evs) {
           ? `style="background:${e._calColor}22;border-left:2px solid ${e._calColor};color:${e._calColor};border-radius:0 3px 3px 0"`
           : ``;
         const calBadge = e._calName ? ` <span style="opacity:.6;font-size:9px">${esc(e._calName.slice(0,10))}</span>` : '';
-        return `<div class="ev-chip ${cls}" ${style} title="${esc(e.summary||'')} · ${esc(e._calName||'')}">${esc((e.summary||'Event').slice(0,14))}</div>`;
+        return `<div class="ev-chip ${cls}" ${style} onclick="openEventImport('${e.id}')" data-clickable="1" title="${esc(e.summary||'')} — bấm để thêm vào Ma trận">${esc((e.summary||'Event').slice(0,14))}</div>`;
       }).join('')}
       ${de.length>4 ? `<div style="font-size:10px;color:var(--text3)">+${de.length-4}</div>` : ''}
     </div>`;
@@ -1212,8 +1344,65 @@ function parseEvTime(ev) {
   return { allDay: false, startMin, durMin, startDate: s };
 }
 
-function renderGCalGrid(mon, evs) {
-  _lastGcalMon = mon; _lastGcalEvents = evs;
+// ── IMPORT EVENT GCAL → TASK (lưu liên kết gcalEventId) ──
+let _pendingImportEvent = null;
+
+function openEventImport(eventId) {
+  const ev = _lastGcalEvents.find(e => e.id === eventId);
+  if (!ev) { toast('Không tìm thấy event'); return; }
+  _pendingImportEvent = ev;
+  // Hiển thị modal chọn ô đích
+  document.getElementById('import-ev-title').textContent = ev.summary || 'Event không tên';
+  const when = ev.start?.dateTime
+    ? new Date(ev.start.dateTime).toLocaleString('vi-VN', {weekday:'short', hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'})
+    : (ev.start?.date ? 'Cả ngày ' + ev.start.date : '');
+  document.getElementById('import-ev-when').textContent = when;
+  document.getElementById('import-ev-modal').classList.add('on');
+}
+function closeEventImport() {
+  document.getElementById('import-ev-modal').classList.remove('on');
+  _pendingImportEvent = null;
+}
+
+async function importEventAsTask(destQ) {
+  const ev = _pendingImportEvent;
+  if (!ev) return;
+
+  // Tính số giờ từ thời lượng event
+  let hours = 0, dateStr = '';
+  if (ev.start?.dateTime) {
+    const s = new Date(ev.start.dateTime);
+    const e = ev.end?.dateTime ? new Date(ev.end.dateTime) : new Date(s.getTime()+30*60000);
+    hours = Math.round((e - s) / 3600000 * 10) / 10;
+    dateStr = s.toISOString().slice(0,10);
+  } else if (ev.start?.date) {
+    dateStr = ev.start.date;
+  }
+
+  const data = await getWeek(weekOffset);
+  if (!data[destQ]) data[destQ] = [];
+
+  // Tránh import trùng: nếu đã có task với cùng gcalEventId thì báo
+  const already = ['q1','q2','q3','q4'].some(q => (data[q]||[]).some(t => t.gcalEventId === ev.id));
+  if (already) { toast('Event này đã được thêm vào Ma trận rồi'); closeEventImport(); return; }
+
+  data[destQ].push({
+    text: ev.summary || 'Event',
+    hours,
+    date: dateStr,
+    done: false,
+    gcal: true,            // đánh dấu có nguồn từ GCal
+    gcalEventId: ev.id,    // ⚠️ liên kết để sau này edit/xóa đồng bộ được
+    gcalCalId: ev._calId || 'primary', // cần để gọi API update/delete đúng calendar
+    goalId: null,
+    created: Date.now()
+  });
+  await setWeek(weekOffset, data);
+  invalidateWeeksCache();
+  closeEventImport();
+  renderTasks();
+  toast(`✓ Đã thêm "${ev.summary||'Event'}" vào ${Q_LABELS[destQ]}`);
+}
   const wrap = document.getElementById('gcal-grid-wrap');
   const days = ['T2','T3','T4','T5','T6','T7','CN'];
   const today = new Date(); today.setHours(0,0,0,0);
@@ -1250,7 +1439,8 @@ function renderGCalGrid(mon, evs) {
       const baseColor = (cls==='ev-gcal' && e._calColor) ? e._calColor : (qTx(cls.replace('ev-','')) || '#1A73E8');
       const timeStr = t.startDate ? t.startDate.toTimeString().slice(0,5) : '';
       return `<div class="cal-event-block" style="top:${top}px;height:${height}px;background:${baseColor}1F;color:${baseColor};border-left-color:${baseColor}"
-                title="${esc(e.summary||'')} · ${esc(e._calName||'')}">
+                onclick="event.stopPropagation();openEventImport('${e.id}')"
+                title="${esc(e.summary||'')} — bấm để thêm vào Ma trận">
                 <span class="ce-time">${timeStr}</span>${esc((e.summary||'Event').slice(0,30))}
               </div>`;
     }).join('');
