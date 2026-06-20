@@ -1229,14 +1229,22 @@ async function askAI() {
   if (goals.length) { ctx+='\nGOALS:\n'; goals.forEach(g=>ctx+=`- ${g.title} [${g.category}] deadline:${g.deadline||'chưa đặt'}${g.done?' (xong)':''}\n`); }
 
   try {
-    const r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,
-        system:'Bạn là AI Coach chuyên về Lý Thuyết Quản Lý Thời Gian Chủ Đích (Đá Trước, Cát Sau). Nguyên lý: Ma trận Eisenhower (Ô 1-4), Tam Giác Hiệu Suất (Thời gian + Tập trung + Năng lượng), Đầu tư Ô 2 để giảm Ô 1. Trả lời tiếng Việt, súc tích, thực tiễn, dưới 300 từ, đề xuất hành động cụ thể.',
-        messages:[{role:'user',content:`${ctx}\nCâu hỏi: ${q}`}]})
-    });
-    const data=await r.json();
-    res.textContent=data.content?.filter(c=>c.type==='text').map(c=>c.text).join('')||'Không có phản hồi.';
+   const r = await fetch('/api/ai-coach', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    question: q,
+    context: ctx
+  })
+});
+
+const data = await r.json();
+
+if (!r.ok) {
+  throw new Error(data.error || 'AI Coach API error');
+}
+
+res.textContent = data.text || 'Không có phản hồi.';
   } catch(e) { res.textContent='Lỗi kết nối AI: '+e.message; }
   btn.disabled=false; btn.innerHTML='Hỏi ↗';
 }
