@@ -13,7 +13,7 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F8F9FA;
+  --bg:#EEF1F5;
   --surface:#FFFFFF;
   --surface2:#F1F3F4;
   --border:#DADCE0;
@@ -104,10 +104,10 @@
 
 /* ── STATS ── */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.25rem}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 18px}
-.stat-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.stat-icon-box{width:34px;height:34px;border-radius:10px;background:var(--purple-lt);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.stat-badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;display:flex;align-items:center;gap:3px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px 22px}
+.stat-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.stat-icon-box{width:38px;height:38px;border-radius:10px;background:var(--purple-lt);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.stat-badge{font-size:11px;font-weight:600;padding:4px 10px;border-radius:100px;display:flex;align-items:center;gap:3px}
 .stat-badge.good{background:var(--green-lt);color:var(--green)}
 .stat-badge.warn{background:var(--coral-lt);color:var(--coral)}
 .stat-badge.neutral{background:var(--surface2);color:var(--text2)}
@@ -162,6 +162,32 @@
 .gcal-week-strip::-webkit-scrollbar{height:4px}
 .gcal-week-strip::-webkit-scrollbar-track{background:transparent}
 .gcal-week-strip::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* ── VIEW TOGGLE ── */
+.view-toggle-btn{font-size:12px;font-weight:500;padding:6px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);border-radius:100px;cursor:pointer;font-family:'Roboto',sans-serif}
+.view-toggle-btn.active{background:var(--purple-lt);color:var(--purple);border-color:var(--purple-lt)}
+.view-toggle-btn:hover:not(.active){background:var(--surface2)}
+
+/* ── CALENDAR GRID VIEW (lưới giờ thật, kiểu Google Calendar) ── */
+.cal-grid-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1.25rem}
+.cal-grid-scroll{overflow-x:auto}
+.cal-grid-header{display:grid;grid-template-columns:50px repeat(7,1fr);border-bottom:1px solid var(--border);min-width:760px}
+.cal-grid-header-cell{padding:10px 6px;text-align:center;border-left:1px solid var(--border)}
+.cal-grid-header-cell:first-child{border-left:none}
+.cal-grid-day-name{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.03em}
+.cal-grid-day-num{font-size:16px;font-weight:600;color:var(--text);margin-top:2px}
+.cal-grid-header-cell.today .cal-grid-day-num{color:var(--purple)}
+.cal-grid-header-cell.today .cal-grid-day-name{color:var(--purple)}
+.cal-grid-body{position:relative;display:grid;grid-template-columns:50px repeat(7,1fr);min-width:760px}
+.cal-grid-hours{display:flex;flex-direction:column}
+.cal-grid-hour-lbl{height:48px;font-size:10px;color:var(--text3);text-align:right;padding-right:6px;transform:translateY(-6px);flex-shrink:0}
+.cal-grid-daycol{position:relative;border-left:1px solid var(--border)}
+.cal-grid-hourline{height:48px;border-bottom:1px solid var(--border)}
+.cal-grid-hourline:hover{background:var(--surface2);cursor:pointer}
+.cal-event-block{position:absolute;left:2px;right:2px;border-radius:4px;padding:3px 6px;font-size:11px;font-weight:500;overflow:hidden;line-height:1.3;cursor:pointer;border-left:3px solid;z-index:2}
+.cal-event-block .ce-time{font-size:9px;opacity:.85;display:block}
+.cal-grid-now-line{position:absolute;left:0;right:0;height:2px;background:var(--coral);z-index:3}
+.cal-grid-now-line::before{content:'';position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--coral)}
 .day-col{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:12px;min-width:100px;flex-shrink:0}
 .day-col.today .day-num{background:var(--purple);color:#fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:8px}
 .day-name{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
@@ -493,7 +519,13 @@
         <div id="cal-list-items" style="font-size:13px;color:var(--text3);padding:4px 0">Đang tải danh sách lịch...</div>
       </div>
 
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <button class="view-toggle-btn active" id="view-btn-list" onclick="switchGCalView('list')">📋 Danh sách</button>
+        <button class="view-toggle-btn" id="view-btn-grid" onclick="switchGCalView('grid')">🗓️ Lưới giờ</button>
+      </div>
+
       <div id="gcal-strip" class="gcal-week-strip"></div>
+      <div id="gcal-grid-wrap" style="display:none"></div>
 
       <div class="gcal-card">
         <div class="gcal-card-title">Đẩy task lên Google Calendar</div>
@@ -1108,7 +1140,9 @@ async function loadGCalFromSelected() {
       const tb = b.start?.dateTime || b.start?.date || '';
       return ta.localeCompare(tb);
     });
+    _lastGcalMon = mon; _lastGcalEvents = allEvents; // lưu lại để switchGCalView dùng ngay, không cần fetch lại
     renderGCalStrip(mon, allEvents);
+    if (gcalViewMode === 'grid') renderGCalGrid(mon, allEvents);
   } catch(e) { document.getElementById('gcal-strip').innerHTML = `<div style="font-size:13px;color:var(--text3)">Lỗi: ${e.message}</div>`; }
 }
 
@@ -1149,6 +1183,117 @@ function gcalEvClass(s) {
   if (s.match(/^\[Ô3\]|^\[Q3\]/)) return 'ev-q3';
   if (s.match(/^\[Ô4\]|^\[Q4\]/)) return 'ev-q4';
   return 'ev-gcal';
+}
+
+// ── CALENDAR GRID VIEW — lưới giờ thật (00:00-23:00) kiểu Google Calendar ──
+// Dùng lại đúng nguồn data (mon, allEvents) từ loadGCalFromSelected(), không gọi lại API.
+let gcalViewMode = 'list'; // 'list' | 'grid'
+let _lastGcalMon = null, _lastGcalEvents = [];
+
+function switchGCalView(mode) {
+  gcalViewMode = mode;
+  document.getElementById('view-btn-list').classList.toggle('active', mode==='list');
+  document.getElementById('view-btn-grid').classList.toggle('active', mode==='grid');
+  document.getElementById('gcal-strip').style.display = mode==='list' ? 'flex' : 'none';
+  document.getElementById('gcal-grid-wrap').style.display = mode==='grid' ? 'block' : 'none';
+  if (mode==='grid' && _lastGcalMon) renderGCalGrid(_lastGcalMon, _lastGcalEvents);
+}
+
+const HOUR_HEIGHT = 48; // px mỗi giờ, phải khớp .cal-grid-hourline height trong CSS
+
+function parseEvTime(ev) {
+  // Trả {startMin, durMin, allDay}. startMin/durMin tính bằng phút từ 00:00.
+  if (ev.start?.date && !ev.start?.dateTime) return { allDay: true, startMin: 0, durMin: 0 };
+  const s = new Date(ev.start.dateTime);
+  const e = ev.end?.dateTime ? new Date(ev.end.dateTime) : new Date(s.getTime()+30*60000);
+  const startMin = s.getHours()*60 + s.getMinutes();
+  let durMin = Math.round((e - s) / 60000);
+  if (durMin <= 0) durMin = 30;
+  return { allDay: false, startMin, durMin, startDate: s };
+}
+
+function renderGCalGrid(mon, evs) {
+  _lastGcalMon = mon; _lastGcalEvents = evs;
+  const wrap = document.getElementById('gcal-grid-wrap');
+  const days = ['T2','T3','T4','T5','T6','T7','CN'];
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  const headerCells = Array.from({length:7}, (_,i) => {
+    const d = new Date(mon); d.setDate(mon.getDate()+i);
+    const isT = d.getTime() === today.getTime();
+    return `<div class="cal-grid-header-cell ${isT?'today':''}">
+      <div class="cal-grid-day-name">${days[i]}</div>
+      <div class="cal-grid-day-num">${d.getDate()}</div>
+    </div>`;
+  }).join('');
+
+  const hourLabels = Array.from({length:24}, (_,h) => `<div class="cal-grid-hour-lbl">${h===0?'':String(h).padStart(2,'0')+':00'}</div>`).join('');
+
+  const dayCols = Array.from({length:7}, (_,i) => {
+    const d = new Date(mon); d.setDate(mon.getDate()+i);
+    const dStr = d.toISOString().slice(0,10);
+    const dayEvents = evs.filter(e => {
+      const raw = e.start?.dateTime || e.start?.date || '';
+      return raw.startsWith(dStr);
+    });
+
+    const hourlines = Array.from({length:24}, (_,h) =>
+      `<div class="cal-grid-hourline" onclick="quickAddAtHour('${dStr}',${h})" title="Thêm event lúc ${String(h).padStart(2,'0')}:00"></div>`
+    ).join('');
+
+    const blocks = dayEvents.map(e => {
+      const t = parseEvTime(e);
+      if (t.allDay) return ''; // event cả ngày: bỏ qua trong grid giờ, đã có ở list view
+      const top = (t.startMin / 60) * HOUR_HEIGHT;
+      const height = Math.max((t.durMin / 60) * HOUR_HEIGHT, 18);
+      const cls = gcalEvClass(e.summary);
+      const baseColor = (cls==='ev-gcal' && e._calColor) ? e._calColor : (qTx(cls.replace('ev-','')) || '#1A73E8');
+      const timeStr = t.startDate ? t.startDate.toTimeString().slice(0,5) : '';
+      return `<div class="cal-event-block" style="top:${top}px;height:${height}px;background:${baseColor}1F;color:${baseColor};border-left-color:${baseColor}"
+                title="${esc(e.summary||'')} · ${esc(e._calName||'')}">
+                <span class="ce-time">${timeStr}</span>${esc((e.summary||'Event').slice(0,30))}
+              </div>`;
+    }).join('');
+
+    // Đường chỉ "hiện tại" nếu là hôm nay
+    let nowLine = '';
+    if (d.getTime() === today.getTime()) {
+      const now = new Date();
+      const nowTop = ((now.getHours()*60+now.getMinutes())/60) * HOUR_HEIGHT;
+      nowLine = `<div class="cal-grid-now-line" style="top:${nowTop}px"></div>`;
+    }
+
+    return `<div class="cal-grid-daycol">${hourlines}${blocks}${nowLine}</div>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="cal-grid-card">
+      <div class="cal-grid-scroll">
+        <div class="cal-grid-header"><div></div>${headerCells}</div>
+        <div class="cal-grid-body" style="max-height:600px;overflow-y:auto">
+          <div class="cal-grid-hours">${hourLabels}</div>
+          ${dayCols}
+        </div>
+      </div>
+    </div>`;
+
+  // Tự cuộn tới giờ hiện tại (trừ hao 2 giờ để có context phía trên)
+  const scrollBody = wrap.querySelector('.cal-grid-body');
+  if (scrollBody) {
+    const now = new Date();
+    scrollBody.scrollTop = Math.max(0, (now.getHours()-2) * HOUR_HEIGHT);
+  }
+}
+
+// Click vào ô giờ trống trong grid -> điền sẵn ngày/giờ vào form tạo event đã có, cuộn tới đó
+function quickAddAtHour(dateStr, hour) {
+  const dateInput = document.getElementById('gn-date');
+  const timeInput = document.getElementById('gn-start');
+  if (dateInput) dateInput.value = dateStr;
+  if (timeInput) timeInput.value = String(hour).padStart(2,'0') + ':00';
+  document.getElementById('gn-title')?.scrollIntoView({behavior:'smooth', block:'center'});
+  document.getElementById('gn-title')?.focus();
+  toast('Đã điền giờ ' + String(hour).padStart(2,'0') + ':00 — nhập tên event và bấm Tạo');
 }
 
 async function renderGCalPush() {
