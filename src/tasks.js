@@ -267,7 +267,7 @@ async function importEventAsTask(destQ) {
   const data = await getWeek(weekOffset);
   const eventId = ev.id;
   const dateStr = getSyncedEventDate(ev);
-  const existing = findTaskLocationByGoogleEventId(data, eventId);
+  const existing = findTaskLocationByGoogleEventId(data, eventId) || findLegacySyncedTaskLocation(data, ev, dateStr);
   if (existing) {
     toast('Event này đã được thêm vào Ma trận rồi');
     closeEventImport();
