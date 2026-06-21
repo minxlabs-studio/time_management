@@ -132,11 +132,12 @@ function buildUpdatedEventSummary(existingSummary, q, title) {
   return title;
 }
 
-function buildEditedEventPayload(existingEvent, q, task) {
+function buildEditedEventPayload(existingEvent, q, task, previousTask = {}) {
   if (!task.date) return null;
 
   const summary = buildUpdatedEventSummary(existingEvent.summary, q, task.text);
-  const description = getTaskGCalDescription(task, '');
+  const shouldPreserveDescription = !String(task.note || '').trim() && !String(previousTask.note || '').trim();
+  const description = getTaskGCalDescription(task, shouldPreserveDescription ? (existingEvent.description || '') : '');
   const timeZone = existingEvent.start?.timeZone || existingEvent.end?.timeZone || 'Asia/Ho_Chi_Minh';
   const shouldUseTimedEvent = Boolean(existingEvent.start?.dateTime || existingEvent.end?.dateTime || task.hours);
 
@@ -526,7 +527,7 @@ async function syncEditedTaskToGoogleCalendar(weekOff, q, i, previousTask, updat
     }
 
     const existingEvent = await existingRes.json();
-    const payload = buildEditedEventPayload(existingEvent, q, updatedTask);
+    const payload = buildEditedEventPayload(existingEvent, q, updatedTask, previousTask);
     if (!payload) {
       return { ok: false, message: 'không đủ dữ liệu để cập nhật event' };
     }
