@@ -120,9 +120,9 @@ function normalizeTaskHours(raw) {
   return Math.round(parsed * 10) / 10;
 }
 
-function getTaskGCalDescription(task, q, fallback = '') {
+function getTaskGCalDescription(task, fallback = '') {
   const note = String(task?.note || '').trim();
-  return note || fallback || `${Q_LABELS[q]}\nTạo từ Đá Trước`;
+  return note || fallback;
 }
 
 function buildUpdatedEventSummary(existingSummary, q, title) {
@@ -136,7 +136,7 @@ function buildEditedEventPayload(existingEvent, q, task) {
   if (!task.date) return null;
 
   const summary = buildUpdatedEventSummary(existingEvent.summary, q, task.text);
-  const description = getTaskGCalDescription(task, q, '');
+  const description = getTaskGCalDescription(task, '');
   const timeZone = existingEvent.start?.timeZone || existingEvent.end?.timeZone || 'Asia/Ho_Chi_Minh';
   const shouldUseTimedEvent = Boolean(existingEvent.start?.dateTime || existingEvent.end?.dateTime || task.hours);
 
@@ -608,7 +608,7 @@ async function confirmPushTask() {
       },
       body: JSON.stringify({
         summary: `[${Q_EVENT_LABELS[q]}] ${t.text}`,
-        description: getTaskGCalDescription(t, q, `${Q_LABELS[q]}\nTạo từ Đá Trước`),
+        description: getTaskGCalDescription(t, `${Q_LABELS[q]}\nTạo từ Đá Trước`),
         start: { dateTime: start.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' },
         end: { dateTime: end.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' },
         colorId: q === 'q1' ? '11' : q === 'q2' ? '9' : q === 'q3' ? '7' : '8'
