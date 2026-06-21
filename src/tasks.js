@@ -321,7 +321,16 @@ async function syncFromGCal() {
       const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.id)}/events?timeMin=${mon.toISOString()}&timeMax=${sun.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=100`, {
         headers: { Authorization: `Bearer ${gCalToken}` }
       });
-      if (!r.ok) return [];
+      if (r.status === 401) {
+        localStorage.removeItem('gct');
+        localStorage.removeItem('gct_exp');
+        gCalToken = null;
+        throw new Error('Google Calendar token đã hết hạn. Hãy cấp quyền lại.');
+      }
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Không tải được lịch ${c.summary || c.id}`);
+      }
       const j = await r.json();
       return (j.items || []).map(e => ({ ...e, _calName: c.summary, _calId: c.id }));
     }));
@@ -362,7 +371,7 @@ async function syncFromGCal() {
     else if (added) toast(`✓ Đồng bộ GCal: thêm ${added} event`);
     else toast(`✓ Đồng bộ GCal: cập nhật ${updated} event`);
   } catch (e) {
-    toast('Lỗi: ' + e.message);
+    toast('Lỗi đồng bộ: ' + e.message);
   }
 }
 
