@@ -323,6 +323,23 @@ body{font-family:'Roboto','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothi
 .bar-pct{font-size:11px;color:var(--text3);min-width:34px;text-align:right}
 .review-insight{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;font-size:13px;color:var(--text2);line-height:1.75}
 .review-insight strong{color:var(--text)}
+.daily-review-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;margin-bottom:1.25rem}
+.daily-review-top{display:grid;grid-template-columns:160px 1fr;gap:14px;align-items:stretch;margin-bottom:14px}
+.daily-score-card{background:linear-gradient(135deg,var(--purple-lt),#F7FAFF);border:1px solid #D7E3FD;border-radius:var(--r-lg);padding:16px;display:flex;flex-direction:column;justify-content:center}
+.daily-score-kicker{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.daily-score-value{font-size:38px;font-weight:700;color:var(--purple);line-height:1}
+.daily-score-label{font-size:15px;font-weight:600;color:var(--text);margin-top:6px}
+.daily-score-copy{font-size:12px;color:var(--text2);line-height:1.6;margin-top:8px}
+.daily-review-summary{background:var(--surface2);border-radius:var(--r-lg);padding:16px}
+.daily-review-date{font-size:12px;color:var(--text3);margin-bottom:10px}
+.daily-review-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.daily-metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px}
+.daily-metric strong{display:block;font-size:18px;color:var(--text);line-height:1.1}
+.daily-metric span{display:block;font-size:11px;color:var(--text3);margin-top:4px}
+.daily-review-next{font-size:13px;color:var(--text2);line-height:1.7}
+.daily-review-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.daily-review-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.daily-review-hint{font-size:12px;color:var(--text3);margin-top:6px}
 
 /* ── HOURS CARD ── */
 .hours-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;margin-bottom:12px}
@@ -382,6 +399,7 @@ body{font-family:'Roboto','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothi
   .stats-grid{grid-template-columns:1fr 1fr}
   .matrix-grid{grid-template-columns:1fr}
   .review-grid{grid-template-columns:1fr}
+  .daily-review-top,.daily-review-fields,.daily-review-metrics{grid-template-columns:1fr}
   .gcal-form-grid{grid-template-columns:1fr}
   .content{padding:1rem}
   /* Sidebar dọc không hợp màn hình hẹp -> chuyển thành thanh ngang phía trên, cuộn ngang */
@@ -650,6 +668,37 @@ body{font-family:'Roboto','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothi
 
     <!-- ══ TỔNG KẾT ══ -->
     <div id="page-review" class="page">
+      <h2 class="section-title">Daily Review</h2>
+      <div class="daily-review-card">
+        <div class="daily-review-top">
+          <div class="daily-score-card">
+            <div class="daily-score-kicker">Daily Score</div>
+            <div class="daily-score-value" id="daily-score-value">--</div>
+            <div class="daily-score-label" id="daily-score-label">Đang tính...</div>
+            <div class="daily-score-copy" id="daily-score-copy"></div>
+          </div>
+          <div class="daily-review-summary">
+            <div class="daily-review-date" id="daily-review-date"></div>
+            <div class="daily-review-metrics" id="daily-review-metrics"></div>
+            <div class="daily-review-next" id="daily-review-next"></div>
+          </div>
+        </div>
+        <div class="daily-review-fields">
+          <div class="form-group">
+            <label>Blocker / reflection note</label>
+            <textarea id="daily-blocker" placeholder="Điều gì làm bạn chậm lại hôm nay? Có bài học nào cần giữ lại?"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Plan tomorrow</label>
+            <textarea id="daily-tomorrow" placeholder="Ngày mai bạn sẽ tập trung vào 1-3 việc gì?"></textarea>
+          </div>
+        </div>
+        <div class="daily-review-actions">
+          <button class="btn-primary" onclick="saveDailyReview()">Lưu Daily Review</button>
+        </div>
+        <div class="daily-review-hint">Daily Score ưu tiên sự rõ ràng và đà tiến lên, không phải để tự phán xét.</div>
+      </div>
+
       <h2 class="section-title" id="review-title">Tổng kết tuần</h2>
       <div class="review-grid" id="review-bars"></div>
       <div class="review-insight" id="review-insight"></div>
@@ -1514,6 +1563,7 @@ async function delMemory(id) { await col('memories').doc(id).delete(); renderMem
 // ── REVIEW ────────────────────────────
 async function renderReview() {
   const data=await getWeek(weekOffset);
+  await renderDailyReview();
   document.getElementById('review-title').textContent='Tổng kết ' + weekRangeLabel(weekOffset);
   const qN={q1:'Ô 1 — Khẩn & QT',q2:'Ô 2 — QT chưa khẩn',q3:'Ô 3 — Khẩn cấp',q4:'Ô 4 — Sao nhãng'};
   const clr={q1:'#D93025',q2:'#1E8E3E',q3:'#1A73E8',q4:'#5F6368'};
@@ -1533,6 +1583,101 @@ async function renderReview() {
   else if (q2dn===q2ts.length) ins=`<strong>✓ Xuất sắc!</strong> Hoàn thành toàn bộ ${q2ts.length} việc Ô 2. Đây là tuần đầu tư vào tương lai thật sự.`;
   else ins=`Ô 2: <strong>${q2dn}/${q2ts.length}</strong> việc hoàn thành. Còn ${q2ts.length-q2dn} việc quan trọng chưa xong — bảo vệ chúng ưu tiên tuần tới.`;
   document.getElementById('review-insight').innerHTML=ins;
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function dailyReviewLabel(score) {
+  if (score >= 85) return 'Excellent day';
+  if (score >= 70) return 'Good progress';
+  if (score >= 50) return 'Needs focus';
+  return 'Reset and simplify tomorrow';
+}
+
+function dailyReviewScore(todayTasks, blockerNote, tomorrowPlan) {
+  const done = todayTasks.filter(t => t.done).length;
+  const undone = todayTasks.length - done;
+  const priorityTasks = todayTasks.filter(t => t.priority === true || t.priority === 'high' || t.priority === 1);
+  const priorityDone = priorityTasks.filter(t => t.done).length;
+
+  let score = 35;
+  if (todayTasks.length) {
+    score += Math.round((done / todayTasks.length) * 45);
+    score -= Math.min(18, undone * 6);
+  } else {
+    score += 20;
+  }
+  if (priorityTasks.length) score += Math.round((priorityDone / priorityTasks.length) * 12);
+  if (blockerNote.trim()) score += 8;
+  if (tomorrowPlan.trim()) score += 7;
+  score = Math.max(0, Math.min(100, score));
+
+  let summary = '';
+  if (!todayTasks.length) summary = 'Hôm nay chưa có task gắn ngày, nên điểm đang ưu tiên sự khởi động nhẹ nhàng.';
+  else if (!undone) summary = `Bạn đã chốt ${done}/${todayTasks.length} việc hôm nay. Nhịp hoàn thành đang rất tốt.`;
+  else summary = `Bạn hoàn thành ${done}/${todayTasks.length} việc hôm nay, còn ${undone} việc cần sắp lại cho ngày mai.`;
+
+  let tomorrow = '';
+  if (score >= 85) tomorrow = 'Ngày mai hãy giữ nhịp này và chọn trước 1 việc quan trọng nhất để bảo vệ.';
+  else if (score >= 70) tomorrow = 'Ngày mai chỉ cần gom lại các việc dở dang và chốt 1 ưu tiên rõ ràng là đủ.';
+  else if (score >= 50) tomorrow = 'Ngày mai nên rút gọn danh sách, bắt đầu từ 1 việc quan trọng và giảm bớt việc gây phân tán.';
+  else tomorrow = 'Ngày mai hãy reset bằng 1-2 việc thật nhỏ, thật rõ để lấy lại đà trước.';
+
+  return { score, label: dailyReviewLabel(score), summary, tomorrow, done, undone, total: todayTasks.length };
+}
+
+async function renderDailyReview() {
+  const today = todayISO();
+  const data = await getWeek(0);
+  const reviewRef = col('dailyReviews').doc(today);
+  const reviewSnap = await reviewRef.get();
+  const review = reviewSnap.exists ? reviewSnap.data() : {};
+  const todayTasks = ['q1','q2','q3','q4'].flatMap(q =>
+    (data[q] || []).map((t, i) => ({ ...t, q, i }))
+  ).filter(t => t.date === today);
+
+  const blockerNote = review.blockerNote || '';
+  const tomorrowPlan = review.tomorrowPlan || '';
+  const score = dailyReviewScore(todayTasks, blockerNote, tomorrowPlan);
+
+  document.getElementById('daily-score-value').textContent = score.score;
+  document.getElementById('daily-score-label').textContent = score.label;
+  document.getElementById('daily-score-copy').textContent = score.summary;
+  document.getElementById('daily-review-date').textContent = `Hôm nay · ${fmtD(today)}`;
+  document.getElementById('daily-review-metrics').innerHTML = [
+    `<div class="daily-metric"><strong>${score.done}</strong><span>hoàn thành</span></div>`,
+    `<div class="daily-metric"><strong>${score.undone}</strong><span>chưa xong</span></div>`,
+    `<div class="daily-metric"><strong>${score.total}</strong><span>task hôm nay</span></div>`
+  ].join('');
+  document.getElementById('daily-review-next').innerHTML = `<strong>${score.label}.</strong> ${score.tomorrow}`;
+  document.getElementById('daily-blocker').value = blockerNote;
+  document.getElementById('daily-tomorrow').value = tomorrowPlan;
+}
+
+async function saveDailyReview() {
+  const today = todayISO();
+  const blockerNote = document.getElementById('daily-blocker').value.trim();
+  const tomorrowPlan = document.getElementById('daily-tomorrow').value.trim();
+  const data = await getWeek(0);
+  const todayTasks = ['q1','q2','q3','q4'].flatMap(q =>
+    (data[q] || []).map((t, i) => ({ ...t, q, i }))
+  ).filter(t => t.date === today);
+  const score = dailyReviewScore(todayTasks, blockerNote, tomorrowPlan);
+
+  await col('dailyReviews').doc(today).set({
+    date: today,
+    blockerNote,
+    tomorrowPlan,
+    score: score.score,
+    label: score.label,
+    updated: Date.now()
+  });
+
+  await renderDailyReview();
+  toast('✓ Đã lưu Daily Review');
 }
 
 // ── HOURS CALC ────────────────────────
