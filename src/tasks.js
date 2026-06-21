@@ -1,6 +1,71 @@
 // ── TASKS ─────────────────────────────
 // Keep these globals because index.html still uses inline handlers.
 const Q_LABELS = { q1: 'Ô 1', q2: 'Ô 2', q3: 'Ô 3', q4: 'Ô 4' };
+const SYNC_QUADRANTS = ['q1', 'q2', 'q3', 'q4'];
+
+function getGoogleCalendarEventId(task) {
+  return task?.googleCalendarEventId || task?.gcalEventId || null;
+}
+
+function buildSyncedTaskText(ev) {
+  const summary = ev.summary || 'Event';
+  return ev._calName ? `${summary} [${ev._calName}]` : summary;
+}
+
+function getSyncedEventDate(ev) {
+  return (ev.start?.dateTime || ev.start?.date || '').slice(0, 10);
+}
+
+function getSyncedEventHours(ev) {
+  if (!ev.start?.dateTime) return 0;
+  const start = new Date(ev.start.dateTime);
+  const fallbackEnd = new Date(start.getTime() + 60 * 60000);
+  const end = ev.end?.dateTime ? new Date(ev.end.dateTime) : fallbackEnd;
+  const durationMs = Math.max(0, end - start);
+  return Math.round(durationMs / 360000) / 10;
+}
+
+function isAppCreatedGCalEvent(ev) {
+  return /^\[(Ô|Q)[1-4]\]/.test(ev.summary || '');
+}
+
+function findTaskLocationByGoogleEventId(data, eventId) {
+  if (!eventId) return null;
+  for (const q of SYNC_QUADRANTS) {
+    const idx = (data[q] || []).findIndex(task => getGoogleCalendarEventId(task) === eventId);
+    if (idx !== -1) return { q, i: idx };
+  }
+  return null;
+}
+
+function findLegacySyncedTaskLocation(data, ev, dateStr) {
+  const legacyTexts = new Set([ev.summary || 'Event', buildSyncedTaskText(ev)]);
+  for (const q of SYNC_QUADRANTS) {
+    const idx = (data[q] || []).findIndex(task => (
+      task.gcal &&
+      !getGoogleCalendarEventId(task) &&
+      task.date === dateStr &&
+      legacyTexts.has(task.text)
+    ));
+    if (idx !== -1) return { q, i: idx };
+  }
+  return null;
+}
+
+function buildSyncedTaskFromEvent(ev, existingTask = {}) {
+  return {
+    ...existingTask,
+    text: buildSyncedTaskText(ev),
+    hours: getSyncedEventHours(ev),
+    date: getSyncedEventDate(ev),
+    gcal: true,
+    gcalEventId: ev.id,
+    googleCalendarEventId: ev.id,
+    gcalCalId: ev._calId || existingTask.gcalCalId || 'primary',
+    updated: Date.now(),
+    created: existingTask.created || Date.now()
+  };
+}
 
 async function renderTasks() {
   const data = await getWeek(weekOffset);
@@ -15,7 +80,7 @@ async function renderTasks() {
 function buildTaskList(q, tasks) {
   const el = document.getElementById('tl-' + q);
   if (!tasks.length) {
-    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px 4px">Chưa có việc nào — kéo task vào đây hoặc thêm bên dưới</div>';
+    el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:10px 4px;line-height:1.6">Chưa có việc nào - kéo task vào đây hoặc thêm bên dưới</div>';
     return;
   }
 
@@ -125,19 +190,20 @@ async function deleteTask(q, i) {
   const task = data[q] && data[q][i];
   if (!task) return;
 
-  if (task.gcalEventId && gCalToken) {
+  const googleEventId = getGoogleCalendarEventId(task);
+  if (googleEventId && gCalToken) {
     const alsoDeleteGCal = confirm(`Task này liên kết với 1 event trên Google Calendar.\n\nOK = Xóa cả task và event GCal\nCancel = Chỉ xóa task trong app (giữ event GCal)`);
     if (alsoDeleteGCal) {
       try {
         const calId = encodeURIComponent(task.gcalCalId || 'primary');
-        const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${task.gcalEventId}`, {
+        const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${googleEventId}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${gCalToken}` }
         });
         if (r.ok || r.status === 410) toast('✓ Đã xóa event trên Google Calendar');
         else toast('⚠️ Không xóa được event GCal (status ' + r.status + '), nhưng task đã xóa khỏi app');
       } catch (e) {
-        toast('⚠️ Lỗi xóa event GCal: ' + e.message + ' — task vẫn được xóa khỏi app');
+        toast('⚠️ Lỗi xóa event GCal: ' + e.message + ' - task vẫn được xóa khỏi app');
       }
     }
   }
@@ -167,7 +233,7 @@ function fmtFocusClock(ms) {
 
 function startFocus(q, i, text) {
   if (focusState) {
-    toast('Đang có 1 phiên tập trung khác — hãy hoàn tất trước.');
+    toast('Đang có 1 phiên tập trung khác - hãy hoàn tất trước.');
     return;
   }
 
