@@ -107,6 +107,39 @@ function getTaskEditableTitle(task) {
   return task?.text || '';
 }
 
+async function getTaskEditSeed(task) {
+  const seed = {
+    title: getTaskEditableTitle(task),
+    note: task?.note || ''
+  };
+
+  if (!hasLinkedGoogleCalendarEvent(task) || task?.gcalEventSummary) return seed;
+  if (!gCalToken || (typeof isGCalTokenValid === 'function' && !isGCalTokenValid())) return seed;
+
+  try {
+    const calId = encodeURIComponent(task.gcalCalId || 'primary');
+    const eventId = getGoogleCalendarEventId(task);
+    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${eventId}`, {
+      headers: { Authorization: `Bearer ${gCalToken}` }
+    });
+    if (res.status === 401) {
+      clearStoredGCalToken();
+      return seed;
+    }
+    if (!res.ok) return seed;
+
+    const ev = await res.json();
+    if (ev.summary) seed.title = stripQuadrantPrefix(ev.summary);
+    if (!String(seed.note || '').trim() && ev.description !== undefined) {
+      seed.note = ev.description || '';
+    }
+  } catch (e) {
+    // Keep editing available even if the linked event cannot be read.
+  }
+
+  return seed;
+}
+
 function getTaskNotePreview(note) {
   const clean = String(note || '').trim();
   if (!clean) return '';
@@ -424,12 +457,13 @@ async function openTaskEdit(q, i) {
     return;
   }
 
+  const editSeed = await getTaskEditSeed(task);
   ensureTaskEditModal();
   taskEditState = { q, i, weekOff: weekOffset };
-  document.getElementById('te-title').value = getTaskEditableTitle(task);
+  document.getElementById('te-title').value = editSeed.title;
   document.getElementById('te-hours').value = task.hours || '';
   document.getElementById('te-date').value = task.date || '';
-  document.getElementById('te-note').value = task.note || '';
+  document.getElementById('te-note').value = editSeed.note;
   document.getElementById('task-edit-hint').textContent = hasLinkedGoogleCalendarEvent(task)
     ? 'Task này đang liên kết Google Calendar. Khi lưu, app sẽ cập nhật event hiện có. Nếu không cập nhật được, thay đổi trong app vẫn được giữ an toàn.'
     : 'Chỉnh sửa sẽ chỉ cập nhật task trong app.';
