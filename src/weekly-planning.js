@@ -1004,3 +1004,61 @@ setGCalCreateMode = function(mode) {
 };
 
 syncGoogleCalendarLikeUi();
+
+function activateMatrixPageDirectly() {
+  const matrixPage = document.getElementById('page-matrix');
+  if (!matrixPage) return;
+  document.querySelectorAll('.page').forEach(page => page.classList.remove('on'));
+  document.querySelectorAll('.sidebar-nav .tab').forEach(tab => tab.classList.remove('active'));
+  matrixPage.classList.add('on');
+  const matrixTab = document.querySelector('.sidebar-nav .tab[onclick*="matrix"]') || document.querySelector('.sidebar-nav .tab');
+  if (matrixTab) matrixTab.classList.add('active');
+}
+
+async function focusImportedEventInMatrix(targetWeekKey) {
+  if (targetWeekKey) weekOffset = weekOffsetForWeekKey(targetWeekKey);
+  updateWeekLabel();
+  activateMatrixPageDirectly();
+  await renderTasks();
+}
+
+importEventAsTask = async function(destQ) {
+  const ev = _pendingImportEvent;
+  if (!ev) {
+    toast('Không tìm thấy event để import');
+    return;
+  }
+
+  const dateStr = getEventDateKey(ev);
+  if (!dateStr) {
+    closeEventImport();
+    toast('Event này chưa có ngày hợp lệ');
+    return;
+  }
+
+  const targetWeekKey = weekKeyForDate(dateStr);
+  const data = await getWeekByKey(targetWeekKey);
+  const existing = findTaskLocationByGoogleEventId(data, ev.id) || findLegacySyncedTaskLocation(data, ev, dateStr);
+
+  closeEventImport();
+
+  if (existing) {
+    await focusImportedEventInMatrix(targetWeekKey);
+    toast(`Event này đã có trong Ma trận · tuần ${formatWeekOfDateLabel(dateStr)}`);
+    return;
+  }
+
+  data[destQ] = data[destQ] || [];
+  const importedTask = buildSyncedTaskFromEvent(ev, {
+    done: false,
+    goalId: null,
+    created: Date.now()
+  });
+  importedTask.text = ev.summary || importedTask.text;
+  data[destQ].push(importedTask);
+  await setWeekByKey(targetWeekKey, data);
+  invalidateWeeksCache();
+
+  await focusImportedEventInMatrix(targetWeekKey);
+  toast(`✓ Đã thêm "${ev.summary || 'Event'}" vào ${Q_LABELS[destQ]} · tuần ${formatWeekOfDateLabel(dateStr)}`);
+};
