@@ -436,6 +436,7 @@ ensureAllTasksView();
 
 // ── GOOGLE CALENDAR ITEM TYPES ───────────────────
 let gcalCreateMode = 'event';
+let gcalViewFilter = 'all';
 
 function getStoredItemType(task) {
   if (task?.itemType === 'event' || task?.itemType === 'task') return task.itemType;
@@ -483,7 +484,6 @@ function buildSyncedTaskFromEvent(ev, existingTask = {}) {
   };
 }
 
-const baseAddTaskFromMatrix = addTask;
 addTask = async function(q) {
   const txt = document.getElementById('in-' + q)?.value?.trim();
   if (!txt) return;
@@ -506,12 +506,17 @@ function ensureGCalModeStyles() {
   style.id = 'gcal-mode-style';
   style.textContent = `
     .gcal-mode-toggle{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-    .gcal-mode-btn{font-size:12px;font-weight:600;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);border-radius:999px;cursor:pointer;font-family:'Roboto',sans-serif}
-    .gcal-mode-btn.active{background:var(--purple-lt);color:var(--purple);border-color:#c8dafc}
+    .gcal-mode-btn,.gcal-filter-btn{font-size:12px;font-weight:600;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);border-radius:999px;cursor:pointer;font-family:'Roboto',sans-serif}
+    .gcal-mode-btn.active,.gcal-filter-btn.active{background:var(--purple-lt);color:var(--purple);border-color:#c8dafc}
     .gcal-type-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 5px;border-radius:999px;margin-right:5px;vertical-align:middle}
-    .gcal-type-badge.task{background:rgba(255,255,255,.7);color:inherit;border:1px solid currentColor}
-    .gcal-type-badge.event{background:rgba(255,255,255,.7);color:inherit;border:1px solid currentColor}
+    .gcal-type-badge.task,.gcal-type-badge.event{background:rgba(255,255,255,.7);color:inherit;border:1px solid currentColor}
     .ev-chip.task-chip{display:flex;align-items:center;gap:4px}
+    .task-chip[data-clickable],.cal-event-block[data-clickable-task]{cursor:pointer}
+    .gcal-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .gcal-filters{display:flex;gap:8px;flex-wrap:wrap}
+    .gcal-range{display:flex;align-items:end;gap:8px;flex-wrap:wrap}
+    .gcal-range .form-group{min-width:140px;margin:0}
+    .gcal-range .btn-ghost{height:34px}
   `;
   document.head.appendChild(style);
 }
@@ -554,7 +559,34 @@ function ensureGCalModeUi() {
     if (calendarGroup?.parentNode) calendarGroup.parentNode.insertBefore(quadrantWrap, calendarGroup.nextSibling);
   }
 
+  const strip = document.getElementById('gcal-strip');
+  if (strip && !document.getElementById('gcal-controls')) {
+    const controls = document.createElement('div');
+    controls.id = 'gcal-controls';
+    controls.className = 'gcal-controls';
+    controls.innerHTML = `
+      <div class="gcal-filters">
+        <button type="button" class="gcal-filter-btn active" id="gcal-filter-all" onclick="setGCalViewFilter('all')">All</button>
+        <button type="button" class="gcal-filter-btn" id="gcal-filter-events" onclick="setGCalViewFilter('events')">Events</button>
+        <button type="button" class="gcal-filter-btn" id="gcal-filter-tasks" onclick="setGCalViewFilter('tasks')">Tasks</button>
+      </div>
+      <div class="gcal-range">
+        <div class="form-group">
+          <label>Từ ngày</label>
+          <input type="date" id="gcal-range-start">
+        </div>
+        <div class="form-group">
+          <label>Đến ngày</label>
+          <input type="date" id="gcal-range-end">
+        </div>
+        <button type="button" class="btn-ghost" onclick="applyGCalRange()">Áp dụng</button>
+        <button type="button" class="btn-ghost" onclick="resetGCalRange()">Tuần này</button>
+      </div>`;
+    strip.parentNode.insertBefore(controls, strip);
+  }
+
   syncGCalModeUi();
+  syncGCalFilterUi();
 }
 
 function setGCalCreateMode(mode) {
@@ -591,22 +623,81 @@ function syncGCalModeUi() {
   if (dateLabel) dateLabel.textContent = 'Ngày';
   if (startLabel) startLabel.textContent = isTask ? 'Giờ bắt đầu (tuỳ chọn)' : 'Giờ bắt đầu';
   if (durLabel) durLabel.textContent = isTask ? 'Giờ ước tính' : 'Thời lượng (phút)';
-  if (descLabel) descLabel.textContent = isTask ? 'Ghi chú' : 'Ghi chú';
+  if (descLabel) descLabel.textContent = 'Ghi chú';
   if (actionBtn) actionBtn.textContent = isTask ? 'Tạo task' : 'Tạo event';
   if (titleInput) titleInput.placeholder = isTask ? 'Tên task...' : 'Tên event...';
   if (descInput) descInput.placeholder = isTask ? 'Ghi chú cho task...' : 'Mô tả thêm...';
-  if (startInput) startInput.value = isTask ? '' : (startInput.value || '09:00');
+  if (startInput && !isTask && !startInput.value) startInput.value = '09:00';
   if (durInput) {
     if (isTask) {
-      durInput.value = durInput.value === '60' ? '1' : (durInput.value || '1');
+      if (!durInput.value || durInput.value === '60') durInput.value = '1';
       durInput.min = '0';
       durInput.step = '0.5';
     } else {
-      durInput.value = durInput.value === '1' ? '60' : (durInput.value || '60');
+      if (!durInput.value || durInput.value === '1') durInput.value = '60';
       durInput.min = '15';
       durInput.step = '15';
     }
   }
+}
+
+function setGCalViewFilter(mode) {
+  gcalViewFilter = ['events', 'tasks'].includes(mode) ? mode : 'all';
+  syncGCalFilterUi();
+  if (_lastGcalMon) renderGCalViewsFromCache();
+}
+
+function syncGCalFilterUi() {
+  document.getElementById('gcal-filter-all')?.classList.toggle('active', gcalViewFilter === 'all');
+  document.getElementById('gcal-filter-events')?.classList.toggle('active', gcalViewFilter === 'events');
+  document.getElementById('gcal-filter-tasks')?.classList.toggle('active', gcalViewFilter === 'tasks');
+}
+
+function matchesGCalViewFilter(item) {
+  if (gcalViewFilter === 'events') return item?._itemType !== 'task';
+  if (gcalViewFilter === 'tasks') return item?._itemType === 'task';
+  return true;
+}
+
+function renderGCalViewsFromCache() {
+  const filtered = (_lastGcalEvents || []).filter(matchesGCalViewFilter);
+  renderGCalStrip(_lastGcalMon, filtered);
+  if (gcalViewMode === 'grid') renderGCalGrid(_lastGcalMon, filtered);
+}
+
+function getSelectedGCalDateRange() {
+  const startInput = document.getElementById('gcal-range-start');
+  const endInput = document.getElementById('gcal-range-end');
+  const startValue = startInput?.value || '';
+  const endValue = endInput?.value || '';
+  if (!startValue && !endValue) return getWeekDateRange(new Date(), weekOffset);
+
+  const startKey = startValue || endValue;
+  const endKey = endValue || startValue;
+  const start = parseCalendarDateInput(startKey);
+  const end = parseCalendarDateInput(endKey);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+  if (start > end) {
+    const swapStart = new Date(end.getTime());
+    swapStart.setHours(0, 0, 0, 0);
+    const swapEnd = new Date(start.getTime());
+    swapEnd.setHours(23, 59, 59, 999);
+    return { mon: swapStart, sun: swapEnd };
+  }
+  return { mon: start, sun: end };
+}
+
+function applyGCalRange() {
+  if (document.getElementById('page-gcal')?.classList.contains('on')) loadGCalFromSelected();
+}
+
+function resetGCalRange() {
+  const startInput = document.getElementById('gcal-range-start');
+  const endInput = document.getElementById('gcal-range-end');
+  if (startInput) startInput.value = '';
+  if (endInput) endInput.value = '';
+  if (document.getElementById('page-gcal')?.classList.contains('on')) loadGCalFromSelected();
 }
 
 function getCalendarVisualClass(item) {
@@ -656,12 +747,12 @@ function renderCalendarChip(item) {
   const badge = `<span class="gcal-type-badge ${isTask ? 'task' : 'event'}">${isTask ? 'Task' : 'Event'}</span>`;
   const label = esc((item.summary || (isTask ? 'Task' : 'Event')).slice(0, 14));
   if (isTask) {
-    return `<div class="ev-chip ${cls} task-chip" ${style} title="${esc(item.summary || '')}">${badge}${label}</div>`;
+    return `<div class="ev-chip ${cls} task-chip" ${style} onclick="openTaskEdit('${item._quadrant}',${item._taskIndex})" data-clickable="1" title="${esc(item.summary || '')} — bấm để sửa task">${badge}${label}</div>`;
   }
   return `<div class="ev-chip ${cls}" ${style} onclick="openEventImport('${item.id}')" data-clickable="1" title="${esc(item.summary || '')} — bấm để thêm vào Ma trận">${badge}${label}</div>`;
 }
 
-async function loadGCalFromSelected() {
+loadGCalFromSelected = async function() {
   ensureGCalModeUi();
   if (!gCalToken) return;
   const activeCals = allCalendars.filter(c => c.selected);
@@ -671,7 +762,7 @@ async function loadGCalFromSelected() {
   }
 
   document.getElementById('gcal-strip').innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Đang tải lịch...</div>';
-  const { mon, sun } = getWeekDateRange(new Date(), weekOffset);
+  const { mon, sun } = getSelectedGCalDateRange();
 
   try {
     const [results, weekData] = await Promise.all([
@@ -696,14 +787,13 @@ async function loadGCalFromSelected() {
 
     _lastGcalMon = mon;
     _lastGcalEvents = allItems;
-    renderGCalStrip(mon, allItems);
-    if (gcalViewMode === 'grid') renderGCalGrid(mon, allItems);
+    renderGCalViewsFromCache();
   } catch (e) {
     document.getElementById('gcal-strip').innerHTML = `<div style="font-size:13px;color:var(--text3)">Lỗi: ${e.message}</div>`;
   }
-}
+};
 
-function renderGCalStrip(mon, items) {
+renderGCalStrip = function(mon, items) {
   const todayKey = localDateKey(new Date());
   const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
   document.getElementById('gcal-strip').innerHTML = Array.from({ length: 7 }, (_, i) => {
@@ -719,11 +809,10 @@ function renderGCalStrip(mon, items) {
       ${dayItems.length > 4 ? `<div style="font-size:10px;color:var(--text3)">+${dayItems.length - 4}</div>` : ''}
     </div>`;
   }).join('');
-}
+};
 
-function renderGCalGrid(mon, items) {
+renderGCalGrid = function(mon, items) {
   _lastGcalMon = mon;
-  _lastGcalEvents = items;
   const wrap = document.getElementById('gcal-grid-wrap');
   const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
   const todayKey = localDateKey(new Date());
@@ -761,10 +850,10 @@ function renderGCalGrid(mon, items) {
       const timeStr = t.startDate ? t.startDate.toTimeString().slice(0, 5) : '';
       const badge = item._itemType === 'task' ? 'Task' : 'Event';
       const clickAttr = item._itemType === 'task'
-        ? ''
+        ? `onclick="event.stopPropagation();openTaskEdit('${item._quadrant}',${item._taskIndex})" data-clickable-task="1"`
         : `onclick="event.stopPropagation();openEventImport('${item.id}')"`;
       const title = item._itemType === 'task'
-        ? `${esc(item.summary || '')} — task trong app`
+        ? `${esc(item.summary || '')} — bấm để sửa task`
         : `${esc(item.summary || '')} — bấm để thêm vào Ma trận`;
       return `<div class="cal-event-block" style="top:${top}px;height:${height}px;background:${baseColor}1F;color:${baseColor};border-left-color:${baseColor}" ${clickAttr} title="${title}">
                 <span class="ce-time">${timeStr}</span><span class="gcal-type-badge ${item._itemType === 'task' ? 'task' : 'event'}">${badge}</span>${esc((item.summary || badge).slice(0, 24))}
@@ -797,15 +886,13 @@ function renderGCalGrid(mon, items) {
     const now = new Date();
     scrollBody.scrollTop = Math.max(0, (now.getHours() - 2) * HOUR_HEIGHT);
   }
-}
+};
 
-async function createGCalEvent() {
+createGCalEvent = async function() {
   ensureGCalModeUi();
-  if (gcalCreateMode === 'task') {
-    return createTaskFromGCalPage();
-  }
+  if (gcalCreateMode === 'task') return createTaskFromGCalPage();
   return createCalendarEventFromGCalPage();
-}
+};
 
 async function createCalendarEventFromGCalPage() {
   if (!gCalToken) { connectGCal(); return; }
@@ -873,6 +960,79 @@ async function createTaskFromGCalPage() {
   toast(`✓ Đã tạo task vào ${Q_LABELS[quadrant]}`);
 }
 
+syncFromGCal = async function() {
+  if (!gCalToken) {
+    connectGCal();
+    return;
+  }
+
+  if (!allCalendars.length) await fetchCalendarList();
+  const activeCals = allCalendars.filter(c => c.selected);
+  if (!activeCals.length) {
+    toast('Hãy chọn ít nhất 1 lịch để đồng bộ');
+    return;
+  }
+
+  toast('Đang đồng bộ...');
+  const { mon, sun } = getSelectedGCalDateRange();
+
+  try {
+    const results = await Promise.all(activeCals.map(async c => {
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.id)}/events?timeMin=${mon.toISOString()}&timeMax=${sun.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=100`, {
+        headers: { Authorization: `Bearer ${gCalToken}` }
+      });
+      if (r.status === 401) {
+        clearStoredGCalToken();
+        throw new Error('Google Calendar token đã hết hạn. Hãy cấp quyền lại.');
+      }
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Không tải được lịch ${c.summary || c.id}`);
+      }
+      const j = await r.json();
+      return (j.items || []).map(e => ({ ...e, _calName: c.summary, _calId: c.id, _itemType: 'event' }));
+    }));
+
+    const data = await getWeek(weekOffset);
+    let added = 0;
+    let updated = 0;
+
+    results.flat().forEach(ev => {
+      if (isAppCreatedGCalEvent(ev)) return;
+      if (!ev.id) return;
+      const dateStr = getEventDateKey(ev);
+      if (!dateStr) return;
+
+      const existing = findTaskLocationByGoogleEventId(data, ev.id) || findLegacySyncedTaskLocation(data, ev, dateStr);
+      const nextTask = buildSyncedTaskFromEvent(ev, existing ? data[existing.q][existing.i] : {});
+      if (existing) {
+        data[existing.q][existing.i] = nextTask;
+        updated++;
+      } else {
+        data.q3 = data.q3 || [];
+        data.q3.push(nextTask);
+        added++;
+      }
+    });
+
+    data.lastGoogleCalendarSyncAt = Date.now();
+    await setWeek(weekOffset, data);
+    invalidateWeeksCache();
+    renderTasks();
+    if (document.getElementById('page-gcal')?.classList.contains('on')) {
+      renderGCalPush();
+      loadGCalFromSelected();
+    }
+
+    if (!added && !updated) toast('Không có event mới để đồng bộ');
+    else if (added && updated) toast(`✓ Đồng bộ GCal: thêm ${added}, cập nhật ${updated}`);
+    else if (added) toast(`✓ Đồng bộ GCal: thêm ${added} event`);
+    else toast(`✓ Đồng bộ GCal: cập nhật ${updated} event`);
+  } catch (e) {
+    toast('Lỗi đồng bộ: ' + e.message);
+  }
+};
+
 const baseShowTabForGCalItems = showTab;
 showTab = function(id, btn) {
   baseShowTabForGCalItems(id, btn);
@@ -881,3 +1041,4 @@ showTab = function(id, btn) {
 
 ensureGCalModeUi();
 setGCalCreateMode('event');
+syncGCalFilterUi();
