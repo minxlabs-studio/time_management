@@ -299,6 +299,28 @@ function isDateKeyWithinRange(dateKey, startKey, endKey) {
   return Boolean(dateKey && startKey && endKey && dateKey >= startKey && dateKey <= endKey);
 }
 
+function normalizeImportedGCalNote(note) {
+  const raw = String(note || '').trim();
+  if (!raw) return '';
+  const withBreaks = raw
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\s*\/p\s*>/gi, '\n')
+    .replace(/<\s*p[^>]*>/gi, '');
+  const stripped = withBreaks
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"');
+  return stripped
+    .split('\n')
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
 function buildAppCalendarItem(task, q, i, meta = {}) {
   const summary = task.text || 'Task';
   const startTime = String(task.startTime || '').trim();
@@ -360,6 +382,27 @@ function formatWeekOfDateLabel(dateKey) {
 function getCurrentWeekKey() {
   return weekKey(typeof weekOffset === 'number' ? weekOffset : 0);
 }
+
+buildSyncedTaskFromEvent = function(ev, existingTask = {}) {
+  return {
+    ...existingTask,
+    text: buildSyncedTaskText(ev),
+    hours: getSyncedEventHours(ev),
+    date: getEventDateKey(ev),
+    startTime: getEventStartTime(ev) || existingTask.startTime || '',
+    note: ev.description !== undefined ? normalizeImportedGCalNote(ev.description) : (existingTask.note || ''),
+    gcal: true,
+    itemType: 'event',
+    source: 'gcal',
+    gcalEventId: ev.id,
+    googleCalendarEventId: ev.id,
+    gcalCalId: ev._calId || existingTask.gcalCalId || 'primary',
+    gcalEventSummary: stripQuadrantPrefix(ev.summary || existingTask.gcalEventSummary || existingTask.text || ''),
+    gcalCalendarName: ev._calName || existingTask.gcalCalendarName || '',
+    updated: Date.now(),
+    created: existingTask.created || Date.now()
+  };
+};
 
 renderCalendarChip = function(item) {
   const cls = getCalendarVisualClass(item);
