@@ -1,10 +1,22 @@
 // ── TASKS ─────────────────────────────
 // Keep these globals because index.html still uses inline handlers.
 const Q_LABELS = { q1: 'Ô 1', q2: 'Ô 2', q3: 'Ô 3', q4: 'Ô 4' };
+const Q_EVENT_LABELS = { q1: 'Ô1', q2: 'Ô2', q3: 'Ô3', q4: 'Ô4' };
 const SYNC_QUADRANTS = ['q1', 'q2', 'q3', 'q4'];
+let taskEditState = null;
+
+function clearStoredGCalToken() {
+  localStorage.removeItem('gct');
+  localStorage.removeItem('gct_exp');
+  gCalToken = null;
+}
 
 function getGoogleCalendarEventId(task) {
   return task?.googleCalendarEventId || task?.gcalEventId || null;
+}
+
+function hasLinkedGoogleCalendarEvent(task) {
+  return Boolean(task?.gcal && getGoogleCalendarEventId(task));
 }
 
 function buildSyncedTaskText(ev) {
@@ -25,8 +37,28 @@ function getSyncedEventHours(ev) {
   return Math.round(durationMs / 360000) / 10;
 }
 
+function getExistingEventDurationMs(ev) {
+  if (ev.start?.dateTime && ev.end?.dateTime) {
+    const start = new Date(ev.start.dateTime);
+    const end = new Date(ev.end.dateTime);
+    const duration = end - start;
+    if (duration > 0) return duration;
+  }
+  if (ev.start?.date && ev.end?.date) {
+    const start = new Date(`${ev.start.date}T00:00:00+07:00`);
+    const end = new Date(`${ev.end.date}T00:00:00+07:00`);
+    const duration = end - start;
+    if (duration > 0) return duration;
+  }
+  return 60 * 60000;
+}
+
 function isAppCreatedGCalEvent(ev) {
   return /^\[(Ô|Q)[1-4]\]/.test(ev.summary || '');
+}
+
+function stripQuadrantPrefix(text) {
+  return String(text || '').replace(/^\[(Ô|Q)[1-4]\]\s*/, '').trim();
 }
 
 function findTaskLocationByGoogleEventId(data, eventId) {
@@ -58,12 +90,118 @@ function buildSyncedTaskFromEvent(ev, existingTask = {}) {
     text: buildSyncedTaskText(ev),
     hours: getSyncedEventHours(ev),
     date: getSyncedEventDate(ev),
+    note: ev.description !== undefined ? ev.description : (existingTask.note || ''),
     gcal: true,
     gcalEventId: ev.id,
     googleCalendarEventId: ev.id,
     gcalCalId: ev._calId || existingTask.gcalCalId || 'primary',
+    gcalEventSummary: stripQuadrantPrefix(ev.summary || existingTask.gcalEventSummary || existingTask.text || ''),
+    gcalCalendarName: ev._calName || existingTask.gcalCalendarName || '',
     updated: Date.now(),
     created: existingTask.created || Date.now()
+  };
+}
+
+function getTaskEditableTitle(task) {
+  if (task?.gcalEventSummary) return stripQuadrantPrefix(task.gcalEventSummary);
+  return task?.text || '';
+}
+
+async function getTaskEditSeed(task) {
+  const seed = {
+    title: getTaskEditableTitle(task),
+    note: task?.note || ''
+  };
+
+  if (!hasLinkedGoogleCalendarEvent(task) || task?.gcalEventSummary) return seed;
+  if (!gCalToken || (typeof isGCalTokenValid === 'function' && !isGCalTokenValid())) return seed;
+
+  try {
+    const calId = encodeURIComponent(task.gcalCalId || 'primary');
+    const eventId = getGoogleCalendarEventId(task);
+    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${eventId}`, {
+      headers: { Authorization: `Bearer ${gCalToken}` }
+    });
+    if (res.status === 401) {
+      clearStoredGCalToken();
+      return seed;
+    }
+    if (!res.ok) return seed;
+
+    const ev = await res.json();
+    if (ev.summary) seed.title = stripQuadrantPrefix(ev.summary);
+    if (!String(seed.note || '').trim() && ev.description !== undefined) {
+      seed.note = ev.description || '';
+    }
+  } catch (e) {
+    // Keep editing available even if the linked event cannot be read.
+  }
+
+  return seed;
+}
+
+function getTaskNotePreview(note) {
+  const clean = String(note || '').trim();
+  if (!clean) return '';
+  return clean.length > 120 ? clean.slice(0, 117) + '...' : clean;
+}
+
+function normalizeTaskHours(raw) {
+  if (raw === '' || raw === null || raw === undefined) return 0;
+  const parsed = parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.round(parsed * 10) / 10;
+}
+
+function getTaskGCalDescription(task, fallback = '') {
+  const note = String(task?.note || '').trim();
+  return note || fallback;
+}
+
+function buildUpdatedEventSummary(existingSummary, q, title) {
+  if (/^\[(Ô|Q)[1-4]\]\s*/.test(existingSummary || '')) {
+    return `[${Q_EVENT_LABELS[q]}] ${title}`;
+  }
+  return title;
+}
+
+function buildEditedEventPayload(existingEvent, q, task, previousTask = {}) {
+  if (!task.date) return null;
+
+  const summary = buildUpdatedEventSummary(existingEvent.summary, q, task.text);
+  const shouldPreserveDescription = !String(task.note || '').trim() && !String(previousTask.note || '').trim();
+  const description = getTaskGCalDescription(task, shouldPreserveDescription ? (existingEvent.description || '') : '');
+  const timeZone = existingEvent.start?.timeZone || existingEvent.end?.timeZone || 'Asia/Ho_Chi_Minh';
+  const shouldUseTimedEvent = Boolean(existingEvent.start?.dateTime || existingEvent.end?.dateTime || task.hours);
+
+  if (shouldUseTimedEvent) {
+    const durationMs = task.hours ? task.hours * 3600000 : getExistingEventDurationMs(existingEvent);
+    const start = existingEvent.start?.dateTime
+      ? new Date(existingEvent.start.dateTime)
+      : new Date(`${task.date}T09:00:00+07:00`);
+    if (Number.isNaN(start.getTime())) return null;
+
+    const [year, month, day] = task.date.split('-').map(Number);
+    start.setFullYear(year, month - 1, day);
+    const end = new Date(start.getTime() + Math.max(durationMs, 30 * 60000));
+
+    return {
+      summary,
+      description,
+      start: { dateTime: start.toISOString(), timeZone },
+      end: { dateTime: end.toISOString(), timeZone }
+    };
+  }
+
+  const end = new Date(`${task.date}T00:00:00+07:00`);
+  if (Number.isNaN(end.getTime())) return null;
+  end.setDate(end.getDate() + 1);
+
+  return {
+    summary,
+    description,
+    start: { date: task.date },
+    end: { date: end.toISOString().slice(0, 10) }
   };
 }
 
@@ -88,9 +226,10 @@ function applyMatrixUiTouchups() {
     .t-check{width:22px;height:22px;border-radius:6px;border-width:2px;margin-top:2px}
     .t-check.done::after{font-size:13px}
     .t-text{font-size:14px;line-height:1.5}
+    .t-note{font-size:12px;color:var(--text2);line-height:1.5;margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
     .t-meta{gap:8px;margin-top:7px}
     .t-meta span{font-size:12px}
-    .t-actions{gap:6px}
+    .t-actions{gap:6px;flex-wrap:wrap}
     .t-act-btn{font-size:13px;padding:6px 10px;min-width:36px;min-height:36px;display:inline-flex;align-items:center;justify-content:center}
     .add-form{padding-top:12px;margin-top:10px;gap:8px}
     .add-form-row{gap:8px}
@@ -98,6 +237,9 @@ function applyMatrixUiTouchups() {
     .add-form input[type=number]{width:72px;font-size:14px;padding:10px 8px}
     .add-form input[type=date]{font-size:13px;padding:10px 10px}
     .add-form .add-btn{padding:10px 16px;font-size:14px;min-height:40px}
+    .task-edit-hint{font-size:12px;color:var(--text3);line-height:1.6;margin-top:2px}
+    #task-edit-modal textarea{min-height:88px;resize:vertical}
+    #task-edit-modal .modal{width:540px}
     @media(max-width:640px){
       .matrix-grid{gap:14px}
       .quadrant{padding:18px}
@@ -106,12 +248,55 @@ function applyMatrixUiTouchups() {
       .add-form-row{flex-wrap:wrap}
       .add-form input[type=number]{width:80px}
       .add-form input[type=date]{min-width:0}
+      #task-edit-modal .modal{width:95vw;padding:1.25rem}
     }
   `;
   document.head.appendChild(style);
 }
 
+function ensureTaskEditModal() {
+  if (document.getElementById('task-edit-modal')) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'task-edit-modal';
+  wrap.innerHTML = `
+    <div class="modal-bg" id="task-edit-modal-bg">
+      <div class="modal">
+        <div class="modal-head">
+          <span class="modal-title">Sửa task</span>
+          <button class="modal-close" onclick="closeTaskEditModal()">×</button>
+        </div>
+        <div class="modal-form">
+          <div class="form-group">
+            <label>Tiêu đề task *</label>
+            <input type="text" id="te-title" placeholder="VD: Chuẩn bị tài liệu họp">
+          </div>
+          <div class="modal-form form-row">
+            <div class="form-group">
+              <label>Giờ ước tính</label>
+              <input type="number" id="te-hours" min="0" max="24" step="0.5" placeholder="VD: 1.5">
+            </div>
+            <div class="form-group">
+              <label>Ngày</label>
+              <input type="date" id="te-date">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Ghi chú / mô tả</label>
+            <textarea id="te-note" placeholder="Thêm ghi chú ngắn nếu cần..."></textarea>
+          </div>
+          <div class="task-edit-hint" id="task-edit-hint"></div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn-cancel" onclick="closeTaskEditModal()">Hủy</button>
+          <button class="btn-save" onclick="saveTaskEdit()">Lưu task</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+}
+
 applyMatrixUiTouchups();
+ensureTaskEditModal();
 
 async function renderTasks() {
   const data = await getWeek(weekOffset);
@@ -136,6 +321,7 @@ function buildTaskList(q, tasks) {
       <button class="t-check ${t.done ? 'done' : ''}" onclick="toggleTask('${q}',${i})" aria-label="Đánh dấu hoàn thành"></button>
       <div class="t-body">
         <div class="t-text ${t.done ? 'done' : ''}">${esc(t.text)}</div>
+        ${t.note ? `<div class="t-note" title="${esc(t.note)}">${esc(getTaskNotePreview(t.note))}</div>` : ''}
         <div class="t-meta">
           ${t.hours ? `<span>⏱ ${t.hours}h</span>` : ''}
           ${t.actualMinutes ? `<span>🔥 ${fmtFocusMin(t.actualMinutes)} đã tập trung</span>` : ''}
@@ -146,6 +332,7 @@ function buildTaskList(q, tasks) {
       </div>
       <div class="t-actions">
         <button class="t-act-btn t-act-btn-focus" data-task-text="${esc(t.text)}" onclick='startFocus("${q}",${i},this.dataset.taskText)' title="Bắt đầu tập trung">▶</button>
+        <button class="t-act-btn" onclick="openTaskEdit('${q}',${i})" title="Sửa task">✎</button>
         ${!t.gcal && t.date ? `<button class="t-act-btn" onclick="pushTask('${q}',${i})" title="Đẩy lên GCal">📅</button>` : ''}
         <button class="t-act-btn" onclick="deleteTask('${q}',${i})" title="Xóa">×</button>
       </div>
@@ -201,8 +388,9 @@ async function onQuadDrop(ev, destQ) {
 function buildAddForm(q) {
   document.getElementById('af-' + q).innerHTML = `
     <input type="text" placeholder="Thêm việc..." id="in-${q}" onkeydown="if(event.key==='Enter')addTask('${q}')">
+    <input type="text" placeholder="Ghi chú (tuỳ chọn)" id="in-note-${q}" onkeydown="if(event.key==='Enter')addTask('${q}')">
     <div class="add-form-row">
-      <input type="number" placeholder="h" id="ih-${q}" min="0.5" max="24" step="0.5" title="Số giờ">
+      <input type="number" placeholder="h" id="ih-${q}" min="0" max="24" step="0.5" title="Số giờ">
       <input type="date" id="id-${q}">
       <button class="add-btn" onclick="addTask('${q}')">+ Thêm</button>
     </div>`;
@@ -212,11 +400,12 @@ async function addTask(q) {
   const txt = document.getElementById('in-' + q)?.value?.trim();
   if (!txt) return;
 
-  const h = parseFloat(document.getElementById('ih-' + q)?.value) || 0;
+  const note = document.getElementById('in-note-' + q)?.value?.trim() || '';
+  const h = normalizeTaskHours(document.getElementById('ih-' + q)?.value);
   const dt = document.getElementById('id-' + q)?.value || '';
   const data = await getWeek(weekOffset);
   if (!data[q]) data[q] = [];
-  data[q].push({ text: txt, hours: h, date: dt, done: false, gcal: false, created: Date.now() });
+  data[q].push({ text: txt, note, hours: h, date: dt, done: false, gcal: false, created: Date.now() });
   await setWeek(weekOffset, data);
   invalidateWeeksCache();
   renderTasks();
@@ -260,6 +449,147 @@ async function deleteTask(q, i) {
   renderTasks();
 }
 
+async function openTaskEdit(q, i) {
+  const data = await getWeek(weekOffset);
+  const task = data[q]?.[i];
+  if (!task) {
+    toast('Không tìm thấy task để sửa');
+    return;
+  }
+
+  const editSeed = await getTaskEditSeed(task);
+  ensureTaskEditModal();
+  taskEditState = { q, i, weekOff: weekOffset };
+  document.getElementById('te-title').value = editSeed.title;
+  document.getElementById('te-hours').value = task.hours || '';
+  document.getElementById('te-date').value = task.date || '';
+  document.getElementById('te-note').value = editSeed.note;
+  document.getElementById('task-edit-hint').textContent = hasLinkedGoogleCalendarEvent(task)
+    ? 'Task này đang liên kết Google Calendar. Khi lưu, app sẽ cập nhật event hiện có. Nếu không cập nhật được, thay đổi trong app vẫn được giữ an toàn.'
+    : 'Chỉnh sửa sẽ chỉ cập nhật task trong app.';
+  document.getElementById('task-edit-modal-bg').classList.add('on');
+  document.getElementById('te-title').focus();
+  document.getElementById('te-title').select();
+}
+
+function closeTaskEditModal() {
+  document.getElementById('task-edit-modal-bg')?.classList.remove('on');
+  taskEditState = null;
+}
+
+async function saveTaskEdit() {
+  const state = taskEditState;
+  if (!state) return;
+
+  const title = document.getElementById('te-title').value.trim();
+  if (!title) {
+    toast('Cần có tiêu đề task');
+    return;
+  }
+
+  const note = document.getElementById('te-note').value.trim();
+  const hours = normalizeTaskHours(document.getElementById('te-hours').value);
+  const date = document.getElementById('te-date').value || '';
+
+  const data = await getWeek(state.weekOff);
+  const currentTask = data[state.q]?.[state.i];
+  if (!currentTask) {
+    closeTaskEditModal();
+    toast('Task không còn tồn tại');
+    return;
+  }
+
+  const updatedTask = {
+    ...currentTask,
+    text: title,
+    note,
+    hours,
+    date,
+    updated: Date.now()
+  };
+
+  if (currentTask.gcalEventSummary || hasLinkedGoogleCalendarEvent(currentTask)) {
+    updatedTask.gcalEventSummary = title;
+  }
+
+  data[state.q][state.i] = updatedTask;
+  await setWeek(state.weekOff, data);
+  invalidateWeeksCache();
+  closeTaskEditModal();
+
+  if (state.weekOff === weekOffset) {
+    renderTasks();
+    if (document.getElementById('page-goals')?.classList.contains('on')) renderGoals();
+  }
+
+  let message = '✓ Đã lưu task';
+  if (hasLinkedGoogleCalendarEvent(updatedTask)) {
+    const result = await syncEditedTaskToGoogleCalendar(state.weekOff, state.q, state.i, currentTask, updatedTask);
+    if (result.ok) {
+      if (document.getElementById('page-gcal')?.classList.contains('on')) loadGCalFromSelected();
+      message = '✓ Đã cập nhật task và Google Calendar';
+    } else {
+      message = `⚠️ Đã lưu task nhưng chưa cập nhật Google Calendar: ${result.message}`;
+    }
+  }
+
+  toast(message);
+}
+
+async function syncEditedTaskToGoogleCalendar(weekOff, q, i, previousTask, updatedTask) {
+  const googleEventId = getGoogleCalendarEventId(updatedTask);
+  if (!googleEventId) return { ok: false, message: 'task này chưa có event liên kết' };
+  if (!gCalToken || (typeof isGCalTokenValid === 'function' && !isGCalTokenValid())) {
+    return { ok: false, message: 'hãy kết nối lại Google Calendar rồi thử lại' };
+  }
+  if (!updatedTask.date) {
+    return { ok: false, message: 'task liên kết cần có ngày để cập nhật event' };
+  }
+
+  try {
+    const calId = encodeURIComponent(updatedTask.gcalCalId || previousTask.gcalCalId || 'primary');
+    const existingRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${googleEventId}`, {
+      headers: { Authorization: `Bearer ${gCalToken}` }
+    });
+    if (existingRes.status === 401) {
+      clearStoredGCalToken();
+      return { ok: false, message: 'phiên Google Calendar đã hết hạn, hãy cấp quyền lại' };
+    }
+    if (!existingRes.ok) {
+      const err = await existingRes.json().catch(() => ({}));
+      return { ok: false, message: err.error?.message || 'không đọc được event hiện tại' };
+    }
+
+    const existingEvent = await existingRes.json();
+    const payload = buildEditedEventPayload(existingEvent, q, updatedTask, previousTask);
+    if (!payload) {
+      return { ok: false, message: 'không đủ dữ liệu để cập nhật event' };
+    }
+
+    const updateRes = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${googleEventId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${gCalToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (updateRes.status === 401) {
+      clearStoredGCalToken();
+      return { ok: false, message: 'phiên Google Calendar đã hết hạn, hãy cấp quyền lại' };
+    }
+    if (!updateRes.ok) {
+      const err = await updateRes.json().catch(() => ({}));
+      return { ok: false, message: err.error?.message || 'không cập nhật được event liên kết' };
+    }
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: e.message || 'đã có lỗi khi cập nhật event' };
+  }
+}
+
 async function importEventAsTask(destQ) {
   const ev = _pendingImportEvent;
   if (!ev) return;
@@ -275,24 +605,74 @@ async function importEventAsTask(destQ) {
   }
 
   if (!data[destQ]) data[destQ] = [];
-  data[destQ].push({
-    text: ev.summary || 'Event',
-    hours: getSyncedEventHours(ev),
-    date: dateStr,
+  const importedTask = buildSyncedTaskFromEvent(ev, {
     done: false,
-    gcal: true,
-    gcalEventId: ev.id,
-    googleCalendarEventId: ev.id,
-    gcalCalId: ev._calId || 'primary',
     goalId: null,
     created: Date.now()
   });
+  importedTask.text = ev.summary || importedTask.text;
+  data[destQ].push(importedTask);
   await setWeek(weekOffset, data);
   invalidateWeeksCache();
   closeEventImport();
   renderTasks();
   toast(`✓ Đã thêm "${ev.summary || 'Event'}" vào ${Q_LABELS[destQ]}`);
 }
+
+async function confirmPushTask() {
+  if (!pendingPush || !gCalToken) return;
+  const { q, i } = pendingPush;
+  const calId = document.getElementById('push-cal-id').value || 'primary';
+  const data = await getWeek(weekOffset);
+  const t = data[q]?.[i];
+  if (!t?.date) {
+    toast('Task cần có ngày hẹn');
+    return;
+  }
+
+  const start = new Date(`${t.date}T09:00:00+07:00`);
+  const end = new Date(start.getTime() + ((t.hours || 1) * 3600000));
+  const calIdEncoded = encodeURIComponent(calId);
+
+  try {
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calIdEncoded}/events`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${gCalToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        summary: `[${Q_EVENT_LABELS[q]}] ${t.text}`,
+        description: getTaskGCalDescription(t, `${Q_LABELS[q]}\nTạo từ Đá Trước`),
+        start: { dateTime: start.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' },
+        end: { dateTime: end.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' },
+        colorId: q === 'q1' ? '11' : q === 'q2' ? '9' : q === 'q3' ? '7' : '8'
+      })
+    });
+    const createdEvent = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(createdEvent.error?.message);
+
+    data[q][i].gcal = true;
+    data[q][i].gcalCalId = calId;
+    data[q][i].gcalEventId = createdEvent.id;
+    data[q][i].googleCalendarEventId = createdEvent.id;
+    data[q][i].gcalEventSummary = t.text;
+    data[q][i].gcalCalendarName = allCalendars.find(c => c.id === calId)?.summary || data[q][i].gcalCalendarName || '';
+    await setWeek(weekOffset, data);
+    invalidateWeeksCache();
+    document.getElementById('push-cal-selector').style.display = 'none';
+    pendingPush = null;
+    renderTasks();
+    renderGCalPush();
+    loadGCalFromSelected();
+    toast('✓ Đã tạo event trên Google Calendar!');
+  } catch (e) {
+    toast('Lỗi GCal: ' + e.message);
+  }
+}
+
+// Alias dùng bởi nút 📅 trong task list (ma trận)
+async function pushTask(q, i) { openPushSelector(q, i); }
 
 async function syncFromGCal() {
   if (!gCalToken) {
@@ -322,9 +702,7 @@ async function syncFromGCal() {
         headers: { Authorization: `Bearer ${gCalToken}` }
       });
       if (r.status === 401) {
-        localStorage.removeItem('gct');
-        localStorage.removeItem('gct_exp');
-        gCalToken = null;
+        clearStoredGCalToken();
         throw new Error('Google Calendar token đã hết hạn. Hãy cấp quyền lại.');
       }
       if (!r.ok) {
