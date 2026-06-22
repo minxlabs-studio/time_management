@@ -266,6 +266,13 @@ function weekKeyForDate(dateInput) {
   return localDateKey(getMondayOfWeek(dateInput));
 }
 
+function weekOffsetForWeekKey(targetWeekKey) {
+  const current = parseCalendarDateInput(weekKey(0));
+  const target = parseCalendarDateInput(targetWeekKey);
+  if (Number.isNaN(current.getTime()) || Number.isNaN(target.getTime())) return 0;
+  return Math.round((target.getTime() - current.getTime()) / (7 * 86400000));
+}
+
 async function getWeekByKey(weekKeyValue) {
   if (!weekKeyValue) return ensureWeekShape({});
   const doc = await col('weeks').doc(weekKeyValue).get();
@@ -691,7 +698,10 @@ createTaskFromGCalPage = async function() {
 
 importEventAsTask = async function(destQ) {
   const ev = _pendingImportEvent;
-  if (!ev) return;
+  if (!ev) {
+    toast('Không tìm thấy event để import');
+    return;
+  }
 
   const dateStr = getEventDateKey(ev);
   if (!dateStr) {
@@ -704,8 +714,14 @@ importEventAsTask = async function(destQ) {
   const data = await getWeekByKey(targetWeekKey);
   const existing = findTaskLocationByGoogleEventId(data, ev.id) || findLegacySyncedTaskLocation(data, ev, dateStr);
   if (existing) {
-    toast('Event này đã được thêm vào Ma trận rồi');
     closeEventImport();
+    const targetOffset = weekOffsetForWeekKey(targetWeekKey);
+    weekOffset = targetOffset;
+    updateWeekLabel();
+    const matrixTab = document.querySelector('.tab[onclick*="matrix"]') || document.querySelector('.tab');
+    if (matrixTab) showTab('matrix', matrixTab);
+    await renderTasks();
+    toast('Event này đã có trong Ma trận của tuần đó rồi');
     return;
   }
 
@@ -721,7 +737,12 @@ importEventAsTask = async function(destQ) {
   invalidateWeeksCache();
   closeEventImport();
 
-  if (targetWeekKey === getCurrentWeekKey()) renderTasks();
+  weekOffset = weekOffsetForWeekKey(targetWeekKey);
+  updateWeekLabel();
+  const matrixTab = document.querySelector('.tab[onclick*="matrix"]') || document.querySelector('.tab');
+  if (matrixTab) showTab('matrix', matrixTab);
+  await renderTasks();
+
   if (document.getElementById('page-gcal')?.classList.contains('on')) loadGCalFromSelected();
 
   toast(`✓ Đã thêm "${ev.summary || 'Event'}" vào ${Q_LABELS[destQ]} · tuần ${formatWeekOfDateLabel(dateStr)}`);
@@ -958,11 +979,6 @@ function syncGoogleCalendarLikeUi() {
 
   const titleText = document.getElementById('gc-modal-title-text');
   const typeText = document.getElementById('gc-modal-type-text');
-  const state = taskEditState;
-  let currentTask = null;
-  if (state?.weekKey) {
-    // async path handled elsewhere; keep fallback copy below
-  }
   const hint = document.getElementById('task-edit-hint')?.textContent || '';
   if (titleText) titleText.textContent = 'Sửa task';
   if (typeText) typeText.textContent = hint.includes('Google Calendar') ? 'Task liên kết Google Calendar' : 'Task trong app';
