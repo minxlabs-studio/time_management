@@ -561,6 +561,7 @@ openTaskEdit = async function(q, i, sourceWeekKey = '') {
   document.getElementById('task-edit-hint').textContent = hasLinkedGoogleCalendarEvent(task)
     ? 'Task này đang liên kết Google Calendar. Khi lưu, app sẽ cập nhật cả ngày và giờ event hiện có.'
     : 'Chỉnh sửa sẽ chỉ cập nhật task trong app.';
+  syncGoogleCalendarLikeUi();
   document.getElementById('task-edit-modal-bg').classList.add('on');
   document.getElementById('te-title').focus();
   document.getElementById('te-title').select();
@@ -819,3 +820,171 @@ syncFromGCal = async function() {
     toast('Lỗi đồng bộ: ' + e.message);
   }
 };
+
+function ensureGoogleCalendarLikeUiStyles() {
+  if (document.getElementById('gcal-google-like-style')) return;
+  const style = document.createElement('style');
+  style.id = 'gcal-google-like-style';
+  style.textContent = `
+    .gcal-card.gcal-compose-card{padding:18px 20px 20px;border-radius:22px;border:1px solid #dadce0;box-shadow:0 1px 2px rgba(60,64,67,.15);background:#fff}
+    .gcal-compose-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+    .gcal-compose-icon{width:38px;height:38px;border-radius:12px;background:#e8f0fe;color:#1a73e8;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
+    .gcal-compose-title{font-size:22px;font-weight:500;color:#3c4043;line-height:1.2}
+    .gcal-compose-sub{font-size:12px;color:#5f6368;margin-top:2px}
+    .gcal-card.gcal-compose-card .gcal-card-title{display:none}
+    .gcal-card.gcal-compose-card .gcal-mode-toggle{gap:6px;margin-bottom:14px}
+    .gcal-card.gcal-compose-card .gcal-mode-btn{padding:8px 16px;border-radius:999px;border:1px solid transparent;background:#f1f3f4;color:#3c4043;font-size:13px;font-weight:500}
+    .gcal-card.gcal-compose-card .gcal-mode-btn.active{background:#e8f0fe;color:#1a73e8;border-color:#d2e3fc}
+    .gcal-card.gcal-compose-card .gcal-form-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:12px;margin-bottom:14px}
+    .gcal-card.gcal-compose-card .form-group{gap:6px}
+    .gcal-card.gcal-compose-card .form-group label{font-size:12px;font-weight:500;color:#5f6368}
+    .gcal-card.gcal-compose-card input,
+    .gcal-card.gcal-compose-card select,
+    .gcal-card.gcal-compose-card textarea{min-height:44px;padding:10px 14px;border-radius:12px;border:1px solid #dadce0;background:#fff;font-size:14px;color:#3c4043;box-shadow:inset 0 1px 1px rgba(60,64,67,.08)}
+    .gcal-card.gcal-compose-card textarea{min-height:88px}
+    .gcal-card.gcal-compose-card input:focus,
+    .gcal-card.gcal-compose-card select:focus,
+    .gcal-card.gcal-compose-card textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.12)}
+    .gcal-card.gcal-compose-card .btn-primary[onclick="createGCalEvent()"]{min-height:44px;padding:0 22px;border-radius:12px;font-size:15px;font-weight:500;background:#1a73e8}
+    .gcal-card.gcal-compose-card .btn-primary[onclick="createGCalEvent()"]:hover{background:#1557b0}
+    .gcal-card.gcal-compose-card .gcal-compose-actions{display:flex;justify-content:flex-end}
+    #task-edit-modal-bg.gc-google-like{background:rgba(60,64,67,.3);backdrop-filter:blur(2px)}
+    #task-edit-modal .modal.gc-google-like-modal{width:min(860px,92vw);padding:30px 32px 28px;border-radius:28px;border:1px solid #dadce0;box-shadow:0 24px 48px rgba(60,64,67,.22)}
+    #task-edit-modal .gc-modal-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+    #task-edit-modal .gc-modal-title-wrap{display:flex;align-items:center;gap:12px;min-width:0}
+    #task-edit-modal .gc-modal-icon{width:42px;height:42px;border-radius:14px;background:#e8f0fe;color:#1a73e8;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+    #task-edit-modal .gc-modal-title{font-size:20px;font-weight:500;color:#3c4043}
+    #task-edit-modal .gc-modal-type{font-size:12px;color:#5f6368;margin-top:2px}
+    #task-edit-modal .modal-close{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#5f6368}
+    #task-edit-modal .modal-close:hover{background:#f1f3f4}
+    #task-edit-modal .gc-google-like-modal .modal-form{display:flex;flex-direction:column;gap:16px}
+    #task-edit-modal .gc-google-like-modal .form-group{gap:7px;margin:0}
+    #task-edit-modal .gc-google-like-modal label{font-size:12px;font-weight:500;color:#5f6368}
+    #task-edit-modal .gc-google-like-modal input,
+    #task-edit-modal .gc-google-like-modal textarea{min-height:48px;padding:12px 16px;border-radius:14px;border:1px solid #dadce0;background:#fff;font-size:16px;color:#3c4043;box-shadow:inset 0 1px 1px rgba(60,64,67,.08)}
+    #task-edit-modal .gc-google-like-modal textarea{min-height:148px;font-size:15px;line-height:1.55}
+    #task-edit-modal .gc-google-like-modal input:focus,
+    #task-edit-modal .gc-google-like-modal textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.12)}
+    #task-edit-modal .gc-google-like-modal .form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    #task-edit-modal .gc-time-row{display:grid;grid-template-columns:minmax(180px,1fr) 1fr;gap:16px}
+    #task-edit-modal .task-edit-hint{font-size:13px;color:#80868b;line-height:1.6;margin-top:2px}
+    #task-edit-modal .modal-foot{margin-top:22px;gap:12px}
+    #task-edit-modal .btn-cancel{min-height:44px;padding:0 18px;border-radius:12px;color:#3c4043;border:1px solid #dadce0;background:#fff}
+    #task-edit-modal .btn-save{min-height:44px;padding:0 22px;border-radius:12px;background:#1a73e8;font-size:15px;font-weight:500}
+    @media(max-width:760px){
+      .gcal-card.gcal-compose-card .gcal-form-grid{grid-template-columns:1fr}
+      #task-edit-modal .gc-google-like-modal{padding:22px 20px;width:94vw}
+      #task-edit-modal .gc-google-like-modal .form-row,
+      #task-edit-modal .gc-time-row{grid-template-columns:1fr}
+      #task-edit-modal .gc-modal-title{font-size:18px}
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureGoogleCalendarLikeComposerUi() {
+  ensureGoogleCalendarLikeUiStyles();
+  const titleInput = document.getElementById('gn-title');
+  if (!titleInput) return;
+  const card = titleInput.closest('.gcal-card');
+  if (!card) return;
+  card.classList.add('gcal-compose-card');
+
+  if (!document.getElementById('gcal-compose-header')) {
+    const header = document.createElement('div');
+    header.id = 'gcal-compose-header';
+    header.className = 'gcal-compose-header';
+    header.innerHTML = `
+      <div class="gcal-compose-icon">+</div>
+      <div>
+        <div class="gcal-compose-title">Thêm</div>
+        <div class="gcal-compose-sub">Tạo Event hoặc Task theo kiểu Google Calendar</div>
+      </div>`;
+    const modeToggle = document.getElementById('gcal-mode-toggle');
+    card.insertBefore(header, modeToggle || card.firstChild);
+  }
+
+  const createBtn = card.querySelector('.btn-primary[onclick="createGCalEvent()"]');
+  if (createBtn && !createBtn.parentElement?.classList.contains('gcal-compose-actions')) {
+    const actions = document.createElement('div');
+    actions.className = 'gcal-compose-actions';
+    createBtn.parentNode.insertBefore(actions, createBtn);
+    actions.appendChild(createBtn);
+  }
+}
+
+function ensureGoogleCalendarLikeTaskModalUi() {
+  ensureGoogleCalendarLikeUiStyles();
+  const modalBg = document.getElementById('task-edit-modal-bg');
+  const modal = document.querySelector('#task-edit-modal .modal');
+  const modalHead = document.querySelector('#task-edit-modal .modal-head');
+  if (!modalBg || !modal || !modalHead) return;
+
+  modalBg.classList.add('gc-google-like');
+  modal.classList.add('gc-google-like-modal');
+
+  if (!document.getElementById('gc-modal-top')) {
+    const top = document.createElement('div');
+    top.id = 'gc-modal-top';
+    top.className = 'gc-modal-top';
+    top.innerHTML = `
+      <div class="gc-modal-title-wrap">
+        <div class="gc-modal-icon">✓</div>
+        <div>
+          <div class="gc-modal-title" id="gc-modal-title-text">Sửa task</div>
+          <div class="gc-modal-type" id="gc-modal-type-text">Task trong app</div>
+        </div>
+      </div>`;
+    const closeBtn = modalHead.querySelector('.modal-close');
+    if (closeBtn) top.appendChild(closeBtn);
+    modalHead.replaceWith(top);
+  }
+
+  const formRow = document.querySelector('#task-edit-modal .modal-form .form-row');
+  const timeWrap = document.getElementById('te-start-time-wrap');
+  if (timeWrap && formRow && timeWrap.parentNode !== formRow.parentNode) {
+    const row = document.createElement('div');
+    row.className = 'gc-time-row';
+    formRow.insertAdjacentElement('afterend', row);
+    row.appendChild(timeWrap);
+    const noteGroup = document.getElementById('te-note')?.closest('.form-group');
+    if (noteGroup) row.appendChild(noteGroup);
+  }
+}
+
+function syncGoogleCalendarLikeUi() {
+  ensureGoogleCalendarLikeComposerUi();
+  ensureGoogleCalendarLikeTaskModalUi();
+
+  const titleText = document.getElementById('gc-modal-title-text');
+  const typeText = document.getElementById('gc-modal-type-text');
+  const state = taskEditState;
+  let currentTask = null;
+  if (state?.weekKey) {
+    // async path handled elsewhere; keep fallback copy below
+  }
+  const hint = document.getElementById('task-edit-hint')?.textContent || '';
+  if (titleText) titleText.textContent = 'Sửa task';
+  if (typeText) typeText.textContent = hint.includes('Google Calendar') ? 'Task liên kết Google Calendar' : 'Task trong app';
+
+  const composerTitle = document.querySelector('#gcal-compose-header .gcal-compose-title');
+  const composerSub = document.querySelector('#gcal-compose-header .gcal-compose-sub');
+  if (composerTitle) composerTitle.textContent = gcalCreateMode === 'task' ? 'Thêm task' : 'Thêm event';
+  if (composerSub) composerSub.textContent = gcalCreateMode === 'task'
+    ? 'Lưu task vào Eisenhower Matrix, giống flow Task của Google Calendar'
+    : 'Tạo event trực tiếp lên Google Calendar với ngày, giờ và thời lượng';
+}
+
+const ensureGCalModeUiBeforeGoogleLike = ensureGCalModeUi;
+ensureGCalModeUi = function() {
+  ensureGCalModeUiBeforeGoogleLike();
+  syncGoogleCalendarLikeUi();
+};
+
+const setGCalCreateModeBeforeGoogleLike = setGCalCreateMode;
+setGCalCreateMode = function(mode) {
+  setGCalCreateModeBeforeGoogleLike(mode);
+  syncGoogleCalendarLikeUi();
+};
+
+syncGoogleCalendarLikeUi();
