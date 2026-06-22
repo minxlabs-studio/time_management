@@ -433,3 +433,451 @@ ensureAllTasksView();
   script.src = './src/weekly-planning.js';
   document.head.appendChild(script);
 })();
+
+// ── GOOGLE CALENDAR ITEM TYPES ───────────────────
+let gcalCreateMode = 'event';
+
+function getStoredItemType(task) {
+  if (task?.itemType === 'event' || task?.itemType === 'task') return task.itemType;
+  if (task?.gcal || task?.gcalEventId || task?.googleCalendarEventId) return 'event';
+  return 'task';
+}
+
+function isAppTaskItem(task) {
+  return getStoredItemType(task) === 'task';
+}
+
+function buildManualTaskRecord(payload) {
+  return {
+    text: payload.text,
+    date: payload.date || '',
+    hours: payload.hours || 0,
+    note: payload.note || '',
+    done: false,
+    itemType: 'task',
+    source: payload.source || 'manual',
+    startTime: payload.startTime || '',
+    gcal: false,
+    goalId: payload.goalId || null,
+    created: payload.created || Date.now()
+  };
+}
+
+function buildSyncedTaskFromEvent(ev, existingTask = {}) {
+  return {
+    ...existingTask,
+    text: buildSyncedTaskText(ev),
+    hours: getSyncedEventHours(ev),
+    date: getEventDateKey(ev),
+    note: ev.description !== undefined ? ev.description : (existingTask.note || ''),
+    gcal: true,
+    itemType: 'event',
+    source: 'gcal',
+    gcalEventId: ev.id,
+    googleCalendarEventId: ev.id,
+    gcalCalId: ev._calId || existingTask.gcalCalId || 'primary',
+    gcalEventSummary: stripQuadrantPrefix(ev.summary || existingTask.gcalEventSummary || existingTask.text || ''),
+    gcalCalendarName: ev._calName || existingTask.gcalCalendarName || '',
+    updated: Date.now(),
+    created: existingTask.created || Date.now()
+  };
+}
+
+const baseAddTaskFromMatrix = addTask;
+addTask = async function(q) {
+  const txt = document.getElementById('in-' + q)?.value?.trim();
+  if (!txt) return;
+
+  const note = document.getElementById('in-note-' + q)?.value?.trim() || '';
+  const h = normalizeTaskHours(document.getElementById('ih-' + q)?.value);
+  const dt = document.getElementById('id-' + q)?.value || '';
+  const data = await getWeek(weekOffset);
+  if (!data[q]) data[q] = [];
+  data[q].push(buildManualTaskRecord({ text: txt, note, hours: h, date: dt }));
+  await setWeek(weekOffset, data);
+  invalidateWeeksCache();
+  renderTasks();
+  toast('Đã thêm: ' + txt);
+};
+
+function ensureGCalModeStyles() {
+  if (document.getElementById('gcal-mode-style')) return;
+  const style = document.createElement('style');
+  style.id = 'gcal-mode-style';
+  style.textContent = `
+    .gcal-mode-toggle{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .gcal-mode-btn{font-size:12px;font-weight:600;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text2);border-radius:999px;cursor:pointer;font-family:'Roboto',sans-serif}
+    .gcal-mode-btn.active{background:var(--purple-lt);color:var(--purple);border-color:#c8dafc}
+    .gcal-type-badge{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 5px;border-radius:999px;margin-right:5px;vertical-align:middle}
+    .gcal-type-badge.task{background:rgba(255,255,255,.7);color:inherit;border:1px solid currentColor}
+    .gcal-type-badge.event{background:rgba(255,255,255,.7);color:inherit;border:1px solid currentColor}
+    .ev-chip.task-chip{display:flex;align-items:center;gap:4px}
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureGCalModeUi() {
+  ensureGCalModeStyles();
+  const titleInput = document.getElementById('gn-title');
+  if (!titleInput) return;
+  const card = titleInput.closest('.gcal-card');
+  const formGrid = card?.querySelector('.gcal-form-grid');
+  if (!card || !formGrid) return;
+
+  const cardTitle = card.querySelector('.gcal-card-title');
+  if (cardTitle) cardTitle.textContent = 'Tạo item mới';
+
+  if (!document.getElementById('gcal-mode-toggle')) {
+    const toggle = document.createElement('div');
+    toggle.id = 'gcal-mode-toggle';
+    toggle.className = 'gcal-mode-toggle';
+    toggle.innerHTML = `
+      <button type="button" class="gcal-mode-btn active" id="gcal-mode-event" onclick="setGCalCreateMode('event')">Event</button>
+      <button type="button" class="gcal-mode-btn" id="gcal-mode-task" onclick="setGCalCreateMode('task')">Task</button>`;
+    card.insertBefore(toggle, formGrid);
+  }
+
+  if (!document.getElementById('gtask-quadrant-wrap')) {
+    const quadrantWrap = document.createElement('div');
+    quadrantWrap.className = 'form-group';
+    quadrantWrap.id = 'gtask-quadrant-wrap';
+    quadrantWrap.style.display = 'none';
+    quadrantWrap.innerHTML = `
+      <label>Ô ưu tiên</label>
+      <select id="gtask-quadrant">
+        <option value="q1">Ô 1 — Khẩn & QT</option>
+        <option value="q2" selected>Ô 2 — QT chưa khẩn</option>
+        <option value="q3">Ô 3 — Khẩn cấp</option>
+        <option value="q4">Ô 4 — Hạn chế</option>
+      </select>`;
+    const calendarGroup = document.getElementById('gn-cal-id')?.closest('.form-group');
+    if (calendarGroup?.parentNode) calendarGroup.parentNode.insertBefore(quadrantWrap, calendarGroup.nextSibling);
+  }
+
+  syncGCalModeUi();
+}
+
+function setGCalCreateMode(mode) {
+  gcalCreateMode = mode === 'task' ? 'task' : 'event';
+  syncGCalModeUi();
+}
+
+function syncGCalModeUi() {
+  ensureGCalModeStyles();
+  const eventBtn = document.getElementById('gcal-mode-event');
+  const taskBtn = document.getElementById('gcal-mode-task');
+  eventBtn?.classList.toggle('active', gcalCreateMode === 'event');
+  taskBtn?.classList.toggle('active', gcalCreateMode === 'task');
+
+  const calGroup = document.getElementById('gn-cal-id')?.closest('.form-group');
+  const quadGroup = document.getElementById('gtask-quadrant-wrap');
+  const startGroup = document.getElementById('gn-start')?.closest('.form-group');
+  const durGroup = document.getElementById('gn-dur')?.closest('.form-group');
+  const descLabel = document.querySelector('label[for="gn-desc"]') || document.getElementById('gn-desc')?.closest('.form-group')?.querySelector('label');
+  const titleLabel = document.getElementById('gn-title')?.closest('.form-group')?.querySelector('label');
+  const dateLabel = document.getElementById('gn-date')?.closest('.form-group')?.querySelector('label');
+  const startLabel = startGroup?.querySelector('label');
+  const durLabel = durGroup?.querySelector('label');
+  const descInput = document.getElementById('gn-desc');
+  const actionBtn = document.querySelector('.gcal-card button.btn-primary[onclick="createGCalEvent()"]');
+  const durInput = document.getElementById('gn-dur');
+  const startInput = document.getElementById('gn-start');
+  const titleInput = document.getElementById('gn-title');
+
+  const isTask = gcalCreateMode === 'task';
+  if (calGroup) calGroup.style.display = isTask ? 'none' : '';
+  if (quadGroup) quadGroup.style.display = isTask ? '' : 'none';
+  if (titleLabel) titleLabel.textContent = isTask ? 'Task title' : 'Tiêu đề';
+  if (dateLabel) dateLabel.textContent = 'Ngày';
+  if (startLabel) startLabel.textContent = isTask ? 'Giờ bắt đầu (tuỳ chọn)' : 'Giờ bắt đầu';
+  if (durLabel) durLabel.textContent = isTask ? 'Giờ ước tính' : 'Thời lượng (phút)';
+  if (descLabel) descLabel.textContent = isTask ? 'Ghi chú' : 'Ghi chú';
+  if (actionBtn) actionBtn.textContent = isTask ? 'Tạo task' : 'Tạo event';
+  if (titleInput) titleInput.placeholder = isTask ? 'Tên task...' : 'Tên event...';
+  if (descInput) descInput.placeholder = isTask ? 'Ghi chú cho task...' : 'Mô tả thêm...';
+  if (startInput) startInput.value = isTask ? '' : (startInput.value || '09:00');
+  if (durInput) {
+    if (isTask) {
+      durInput.value = durInput.value === '60' ? '1' : (durInput.value || '1');
+      durInput.min = '0';
+      durInput.step = '0.5';
+    } else {
+      durInput.value = durInput.value === '1' ? '60' : (durInput.value || '60');
+      durInput.min = '15';
+      durInput.step = '15';
+    }
+  }
+}
+
+function getCalendarVisualClass(item) {
+  if (item?._itemType === 'task' && item._quadrant) return `ev-${item._quadrant}`;
+  return gcalEvClass(item?.summary);
+}
+
+function buildAppCalendarItems(data) {
+  const items = [];
+  ['q1', 'q2', 'q3', 'q4'].forEach(q => {
+    (data[q] || []).forEach((task, i) => {
+      if (!task?.date || !isAppTaskItem(task)) return;
+      const summary = task.text || 'Task';
+      const startTime = String(task.startTime || '').trim();
+      const item = {
+        id: `app-task-${q}-${i}-${task.created || Date.now()}`,
+        summary,
+        description: task.note || '',
+        _itemType: 'task',
+        _quadrant: q,
+        _taskIndex: i,
+        _taskDone: !!task.done,
+        _taskHours: task.hours || 0,
+        _taskSource: task.source || 'manual'
+      };
+      if (startTime) {
+        const start = new Date(`${task.date}T${startTime}:00+07:00`);
+        const end = new Date(start.getTime() + Math.max(task.hours || 1, 0.5) * 3600000);
+        item.start = { dateTime: start.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' };
+        item.end = { dateTime: end.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' };
+      } else {
+        item.start = { date: task.date };
+        item.end = { date: addDaysToDateKey(task.date, 1) };
+      }
+      items.push(item);
+    });
+  });
+  return items;
+}
+
+function renderCalendarChip(item) {
+  const cls = getCalendarVisualClass(item);
+  const isTask = item?._itemType === 'task';
+  const style = cls === 'ev-gcal' && item._calColor
+    ? `style="background:${item._calColor}22;border-left:2px solid ${item._calColor};color:${item._calColor};border-radius:0 3px 3px 0"`
+    : '';
+  const badge = `<span class="gcal-type-badge ${isTask ? 'task' : 'event'}">${isTask ? 'Task' : 'Event'}</span>`;
+  const label = esc((item.summary || (isTask ? 'Task' : 'Event')).slice(0, 14));
+  if (isTask) {
+    return `<div class="ev-chip ${cls} task-chip" ${style} title="${esc(item.summary || '')}">${badge}${label}</div>`;
+  }
+  return `<div class="ev-chip ${cls}" ${style} onclick="openEventImport('${item.id}')" data-clickable="1" title="${esc(item.summary || '')} — bấm để thêm vào Ma trận">${badge}${label}</div>`;
+}
+
+async function loadGCalFromSelected() {
+  ensureGCalModeUi();
+  if (!gCalToken) return;
+  const activeCals = allCalendars.filter(c => c.selected);
+  if (!activeCals.length) {
+    document.getElementById('gcal-strip').innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Chưa chọn lịch nào. Tick vào ô bên trên rồi bấm Áp dụng.</div>';
+    return;
+  }
+
+  document.getElementById('gcal-strip').innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Đang tải lịch...</div>';
+  const { mon, sun } = getWeekDateRange(new Date(), weekOffset);
+
+  try {
+    const [results, weekData] = await Promise.all([
+      Promise.all(activeCals.map(async c => {
+        const calId = encodeURIComponent(c.id);
+        const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${mon.toISOString()}&timeMax=${sun.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=100`, {
+          headers: { Authorization: `Bearer ${gCalToken}` }
+        });
+        if (!r.ok) return [];
+        const j = await r.json();
+        return (j.items || []).map(e => ({ ...e, _calColor: c.backgroundColor, _calName: c.summary, _calId: c.id, _itemType: 'event' }));
+      })),
+      getWeek(weekOffset)
+    ]);
+
+    const appItems = buildAppCalendarItems(weekData);
+    const allItems = [...results.flat(), ...appItems].sort((a, b) => {
+      const ta = a.start?.dateTime || a.start?.date || '';
+      const tb = b.start?.dateTime || b.start?.date || '';
+      return ta.localeCompare(tb);
+    });
+
+    _lastGcalMon = mon;
+    _lastGcalEvents = allItems;
+    renderGCalStrip(mon, allItems);
+    if (gcalViewMode === 'grid') renderGCalGrid(mon, allItems);
+  } catch (e) {
+    document.getElementById('gcal-strip').innerHTML = `<div style="font-size:13px;color:var(--text3)">Lỗi: ${e.message}</div>`;
+  }
+}
+
+function renderGCalStrip(mon, items) {
+  const todayKey = localDateKey(new Date());
+  const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  document.getElementById('gcal-strip').innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon.getTime());
+    d.setDate(mon.getDate() + i);
+    const dateKey = localDateKey(d);
+    const isToday = dateKey === todayKey;
+    const dayItems = items.filter(item => getEventDateKey(item) === dateKey);
+    return `<div class="day-col ${isToday ? 'today' : ''}">
+      <div class="day-name">${days[i]}</div>
+      <div class="day-num">${d.getDate()}</div>
+      ${dayItems.slice(0, 4).map(renderCalendarChip).join('')}
+      ${dayItems.length > 4 ? `<div style="font-size:10px;color:var(--text3)">+${dayItems.length - 4}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderGCalGrid(mon, items) {
+  _lastGcalMon = mon;
+  _lastGcalEvents = items;
+  const wrap = document.getElementById('gcal-grid-wrap');
+  const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const todayKey = localDateKey(new Date());
+
+  const headerCells = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon.getTime());
+    d.setDate(mon.getDate() + i);
+    const dateKey = localDateKey(d);
+    const isToday = dateKey === todayKey;
+    return `<div class="cal-grid-header-cell ${isToday ? 'today' : ''}">
+      <div class="cal-grid-day-name">${days[i]}</div>
+      <div class="cal-grid-day-num">${d.getDate()}</div>
+    </div>`;
+  }).join('');
+
+  const hourLabels = Array.from({ length: 24 }, (_, h) => `<div class="cal-grid-hour-lbl">${h === 0 ? '' : String(h).padStart(2, '0') + ':00'}</div>`).join('');
+
+  const dayCols = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon.getTime());
+    d.setDate(mon.getDate() + i);
+    const dateKey = localDateKey(d);
+    const dayItems = items.filter(item => getEventDateKey(item) === dateKey);
+
+    const hourlines = Array.from({ length: 24 }, (_, h) =>
+      `<div class="cal-grid-hourline" onclick="quickAddAtHour('${dateKey}',${h})" title="Thêm event lúc ${String(h).padStart(2, '0')}:00"></div>`
+    ).join('');
+
+    const blocks = dayItems.map(item => {
+      const t = parseEvTime(item);
+      if (t.allDay) return '';
+      const top = (t.startMin / 60) * HOUR_HEIGHT;
+      const height = Math.max((t.durMin / 60) * HOUR_HEIGHT, 18);
+      const cls = getCalendarVisualClass(item);
+      const baseColor = (cls === 'ev-gcal' && item._calColor) ? item._calColor : (qTx(cls.replace('ev-', '')) || '#1A73E8');
+      const timeStr = t.startDate ? t.startDate.toTimeString().slice(0, 5) : '';
+      const badge = item._itemType === 'task' ? 'Task' : 'Event';
+      const clickAttr = item._itemType === 'task'
+        ? ''
+        : `onclick="event.stopPropagation();openEventImport('${item.id}')"`;
+      const title = item._itemType === 'task'
+        ? `${esc(item.summary || '')} — task trong app`
+        : `${esc(item.summary || '')} — bấm để thêm vào Ma trận`;
+      return `<div class="cal-event-block" style="top:${top}px;height:${height}px;background:${baseColor}1F;color:${baseColor};border-left-color:${baseColor}" ${clickAttr} title="${title}">
+                <span class="ce-time">${timeStr}</span><span class="gcal-type-badge ${item._itemType === 'task' ? 'task' : 'event'}">${badge}</span>${esc((item.summary || badge).slice(0, 24))}
+              </div>`;
+    }).join('');
+
+    let nowLine = '';
+    if (dateKey === todayKey) {
+      const now = new Date();
+      const nowTop = ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT;
+      nowLine = `<div class="cal-grid-now-line" style="top:${nowTop}px"></div>`;
+    }
+
+    return `<div class="cal-grid-daycol">${hourlines}${blocks}${nowLine}</div>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="cal-grid-card">
+      <div class="cal-grid-scroll">
+        <div class="cal-grid-header"><div></div>${headerCells}</div>
+        <div class="cal-grid-body" style="max-height:600px;overflow-y:auto">
+          <div class="cal-grid-hours">${hourLabels}</div>
+          ${dayCols}
+        </div>
+      </div>
+    </div>`;
+
+  const scrollBody = wrap.querySelector('.cal-grid-body');
+  if (scrollBody) {
+    const now = new Date();
+    scrollBody.scrollTop = Math.max(0, (now.getHours() - 2) * HOUR_HEIGHT);
+  }
+}
+
+async function createGCalEvent() {
+  ensureGCalModeUi();
+  if (gcalCreateMode === 'task') {
+    return createTaskFromGCalPage();
+  }
+  return createCalendarEventFromGCalPage();
+}
+
+async function createCalendarEventFromGCalPage() {
+  if (!gCalToken) { connectGCal(); return; }
+  const title = document.getElementById('gn-title').value.trim();
+  const calId = document.getElementById('gn-cal-id')?.value || 'primary';
+  const date = document.getElementById('gn-date').value;
+  const time = document.getElementById('gn-start').value || '09:00';
+  const dur = parseInt(document.getElementById('gn-dur').value, 10) || 60;
+  const desc = document.getElementById('gn-desc').value;
+  if (!title || !date) { toast('Cần có tiêu đề và ngày'); return; }
+  const start = new Date(`${date}T${time}:00+07:00`);
+  const end = new Date(start.getTime() + dur * 60000);
+  try {
+    const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${gCalToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        summary: title,
+        description: desc,
+        start: { dateTime: start.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' },
+        end: { dateTime: end.toISOString(), timeZone: 'Asia/Ho_Chi_Minh' }
+      })
+    });
+    if (!r.ok) throw new Error((await r.json()).error?.message);
+    document.getElementById('gn-title').value = '';
+    document.getElementById('gn-date').value = '';
+    document.getElementById('gn-desc').value = '';
+    document.getElementById('gn-start').value = '09:00';
+    document.getElementById('gn-dur').value = '60';
+    loadGCalFromSelected();
+    toast('✓ Đã tạo event!');
+  } catch (e) {
+    toast('Lỗi: ' + e.message);
+  }
+}
+
+async function createTaskFromGCalPage() {
+  const title = document.getElementById('gn-title').value.trim();
+  const quadrant = document.getElementById('gtask-quadrant')?.value || 'q2';
+  const date = document.getElementById('gn-date').value;
+  const startTime = document.getElementById('gn-start').value || '';
+  const hours = normalizeTaskHours(document.getElementById('gn-dur').value);
+  const note = document.getElementById('gn-desc').value.trim();
+  if (!title || !date) { toast('Cần có tên task và ngày'); return; }
+
+  const data = await getWeek(weekOffset);
+  if (!data[quadrant]) data[quadrant] = [];
+  data[quadrant].push(buildManualTaskRecord({
+    text: title,
+    date,
+    hours,
+    note,
+    startTime,
+    source: 'manual'
+  }));
+  await setWeek(weekOffset, data);
+  invalidateWeeksCache();
+  document.getElementById('gn-title').value = '';
+  document.getElementById('gn-date').value = '';
+  document.getElementById('gn-start').value = '';
+  document.getElementById('gn-dur').value = '1';
+  document.getElementById('gn-desc').value = '';
+  renderTasks();
+  if (document.getElementById('page-gcal')?.classList.contains('on')) loadGCalFromSelected();
+  toast(`✓ Đã tạo task vào ${Q_LABELS[quadrant]}`);
+}
+
+const baseShowTabForGCalItems = showTab;
+showTab = function(id, btn) {
+  baseShowTabForGCalItems(id, btn);
+  if (id === 'gcal') ensureGCalModeUi();
+};
+
+ensureGCalModeUi();
+setGCalCreateMode('event');
