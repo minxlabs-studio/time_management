@@ -424,3 +424,12 @@ renderTasks = async function() {
 };
 
 ensureAllTasksView();
+
+// Weekly Planning loader
+(function loadWeeklyPlanningView() {
+  if (document.getElementById('weekly-planning-script')) return;
+  const script = document.createElement('script');
+  script.id = 'weekly-planning-script';
+  script.src = './src/weekly-planning.js';
+  document.head.appendChild(script);
+})();
