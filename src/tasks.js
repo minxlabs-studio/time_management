@@ -909,3 +909,319 @@ function buildStats(data) {
       <div class="stat-lbl">Tỉ lệ Ô 2</div><div class="stat-val">${q2r}%</div>
     </div>`;
 }
+
+// ── GCAL LOCAL DATE FIXES ─────────────────────────
+function parseCalendarDateInput(dateInput) {
+  if (dateInput instanceof Date) return new Date(dateInput.getTime());
+  if (typeof dateInput === 'string') {
+    const dateOnly = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      const [, y, m, d] = dateOnly;
+      return new Date(Number(y), Number(m) - 1, Number(d));
+    }
+    const localDateTime = dateInput.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (localDateTime) {
+      const [, y, m, d, hh, mm, ss = '0'] = localDateTime;
+      return new Date(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+    }
+  }
+  return new Date(dateInput);
+}
+
+function localDateKey(dateInput) {
+  const d = parseCalendarDateInput(dateInput);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDaysToDateKey(dateKey, days = 0) {
+  const d = parseCalendarDateInput(dateKey);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setDate(d.getDate() + days);
+  return localDateKey(d);
+}
+
+function getMondayOfWeek(dateInput, off = 0) {
+  const d = parseCalendarDateInput(dateInput);
+  if (Number.isNaN(d.getTime())) return d;
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff + off * 7);
+  return d;
+}
+
+function getWeekDateRange(dateInput, off = 0) {
+  const mon = getMondayOfWeek(dateInput, off);
+  const sun = new Date(mon.getTime());
+  sun.setDate(sun.getDate() + 6);
+  sun.setHours(23, 59, 59, 999);
+  return { mon, sun };
+}
+
+function getEventDateKey(ev) {
+  if (ev?.start?.date) return ev.start.date;
+  if (ev?.start?.dateTime) return localDateKey(ev.start.dateTime);
+  return '';
+}
+
+function getSyncedEventDate(ev) {
+  return getEventDateKey(ev);
+}
+
+function buildEditedEventPayload(existingEvent, q, task, previousTask = {}) {
+  if (!task.date) return null;
+
+  const summary = buildUpdatedEventSummary(existingEvent.summary, q, task.text);
+  const shouldPreserveDescription = !String(task.note || '').trim() && !String(previousTask.note || '').trim();
+  const description = getTaskGCalDescription(task, shouldPreserveDescription ? (existingEvent.description || '') : '');
+  const timeZone = existingEvent.start?.timeZone || existingEvent.end?.timeZone || 'Asia/Ho_Chi_Minh';
+  const shouldUseTimedEvent = Boolean(existingEvent.start?.dateTime || existingEvent.end?.dateTime || task.hours);
+
+  if (shouldUseTimedEvent) {
+    const durationMs = task.hours ? task.hours * 3600000 : getExistingEventDurationMs(existingEvent);
+    const start = existingEvent.start?.dateTime
+      ? new Date(existingEvent.start.dateTime)
+      : new Date(`${task.date}T09:00:00+07:00`);
+    if (Number.isNaN(start.getTime())) return null;
+
+    const [year, month, day] = task.date.split('-').map(Number);
+    start.setFullYear(year, month - 1, day);
+    const end = new Date(start.getTime() + Math.max(durationMs, 30 * 60000));
+
+    return {
+      summary,
+      description,
+      start: { dateTime: start.toISOString(), timeZone },
+      end: { dateTime: end.toISOString(), timeZone }
+    };
+  }
+
+  return {
+    summary,
+    description,
+    start: { date: task.date },
+    end: { date: addDaysToDateKey(task.date, 1) }
+  };
+}
+
+function weekKey(off) {
+  return localDateKey(getMondayOfWeek(new Date(), off));
+}
+
+function weekRangeLabel(off) {
+  const s = getMondayOfWeek(new Date(), off);
+  const e = new Date(s.getTime());
+  e.setDate(e.getDate() + 6);
+  const f = d => `${d.getDate()}/${d.getMonth() + 1}`;
+  if (off === 0) return `Tuần này · ${f(s)} – ${f(e)}`;
+  if (off === -1) return `Tuần trước · ${f(s)} – ${f(e)}`;
+  if (off === 1) return `Tuần tới · ${f(s)} – ${f(e)}`;
+  return `${f(s)} – ${f(e)}`;
+}
+
+async function loadGCalFromSelected() {
+  if (!gCalToken) return;
+  const activeCals = allCalendars.filter(c => c.selected);
+  if (!activeCals.length) {
+    document.getElementById('gcal-strip').innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Chưa chọn lịch nào. Tick vào ô bên trên rồi bấm Áp dụng.</div>';
+    return;
+  }
+
+  document.getElementById('gcal-strip').innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Đang tải lịch...</div>';
+  const { mon, sun } = getWeekDateRange(new Date(), weekOffset);
+
+  try {
+    const results = await Promise.all(activeCals.map(async c => {
+      const calId = encodeURIComponent(c.id);
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${mon.toISOString()}&timeMax=${sun.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=100`, {
+        headers: { Authorization: `Bearer ${gCalToken}` }
+      });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return (j.items || []).map(e => ({ ...e, _calColor: c.backgroundColor, _calName: c.summary, _calId: c.id }));
+    }));
+
+    const allEvents = results.flat().sort((a, b) => {
+      const ta = a.start?.dateTime || a.start?.date || '';
+      const tb = b.start?.dateTime || b.start?.date || '';
+      return ta.localeCompare(tb);
+    });
+    _lastGcalMon = mon;
+    _lastGcalEvents = allEvents;
+    renderGCalStrip(mon, allEvents);
+    if (gcalViewMode === 'grid') renderGCalGrid(mon, allEvents);
+  } catch (e) {
+    document.getElementById('gcal-strip').innerHTML = `<div style="font-size:13px;color:var(--text3)">Lỗi: ${e.message}</div>`;
+  }
+}
+
+function renderGCalStrip(mon, evs) {
+  const todayKey = localDateKey(new Date());
+  const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  document.getElementById('gcal-strip').innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon.getTime());
+    d.setDate(mon.getDate() + i);
+    const dateKey = localDateKey(d);
+    const isToday = dateKey === todayKey;
+    const dayEvents = evs.filter(e => getEventDateKey(e) === dateKey);
+    return `<div class="day-col ${isToday ? 'today' : ''}">
+      <div class="day-name">${days[i]}</div>
+      <div class="day-num">${d.getDate()}</div>
+      ${dayEvents.slice(0, 4).map(e => {
+        const cls = gcalEvClass(e.summary);
+        const style = cls === 'ev-gcal' && e._calColor
+          ? `style="background:${e._calColor}22;border-left:2px solid ${e._calColor};color:${e._calColor};border-radius:0 3px 3px 0"`
+          : '';
+        return `<div class="ev-chip ${cls}" ${style} onclick="openEventImport('${e.id}')" data-clickable="1" title="${esc(e.summary || '')} — bấm để thêm vào Ma trận">${esc((e.summary || 'Event').slice(0, 14))}</div>`;
+      }).join('')}
+      ${dayEvents.length > 4 ? `<div style="font-size:10px;color:var(--text3)">+${dayEvents.length - 4}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderGCalGrid(mon, evs) {
+  _lastGcalMon = mon;
+  _lastGcalEvents = evs;
+  const wrap = document.getElementById('gcal-grid-wrap');
+  const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const todayKey = localDateKey(new Date());
+
+  const headerCells = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon.getTime());
+    d.setDate(mon.getDate() + i);
+    const dateKey = localDateKey(d);
+    const isToday = dateKey === todayKey;
+    return `<div class="cal-grid-header-cell ${isToday ? 'today' : ''}">
+      <div class="cal-grid-day-name">${days[i]}</div>
+      <div class="cal-grid-day-num">${d.getDate()}</div>
+    </div>`;
+  }).join('');
+
+  const hourLabels = Array.from({ length: 24 }, (_, h) => `<div class="cal-grid-hour-lbl">${h === 0 ? '' : String(h).padStart(2, '0') + ':00'}</div>`).join('');
+
+  const dayCols = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mon.getTime());
+    d.setDate(mon.getDate() + i);
+    const dateKey = localDateKey(d);
+    const dayEvents = evs.filter(e => getEventDateKey(e) === dateKey);
+
+    const hourlines = Array.from({ length: 24 }, (_, h) =>
+      `<div class="cal-grid-hourline" onclick="quickAddAtHour('${dateKey}',${h})" title="Thêm event lúc ${String(h).padStart(2, '0')}:00"></div>`
+    ).join('');
+
+    const blocks = dayEvents.map(e => {
+      const t = parseEvTime(e);
+      if (t.allDay) return '';
+      const top = (t.startMin / 60) * HOUR_HEIGHT;
+      const height = Math.max((t.durMin / 60) * HOUR_HEIGHT, 18);
+      const cls = gcalEvClass(e.summary);
+      const baseColor = (cls === 'ev-gcal' && e._calColor) ? e._calColor : (qTx(cls.replace('ev-', '')) || '#1A73E8');
+      const timeStr = t.startDate ? t.startDate.toTimeString().slice(0, 5) : '';
+      return `<div class="cal-event-block" style="top:${top}px;height:${height}px;background:${baseColor}1F;color:${baseColor};border-left-color:${baseColor}"
+                onclick="event.stopPropagation();openEventImport('${e.id}')"
+                title="${esc(e.summary || '')} — bấm để thêm vào Ma trận">
+                <span class="ce-time">${timeStr}</span>${esc((e.summary || 'Event').slice(0, 30))}
+              </div>`;
+    }).join('');
+
+    let nowLine = '';
+    if (dateKey === todayKey) {
+      const now = new Date();
+      const nowTop = ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT;
+      nowLine = `<div class="cal-grid-now-line" style="top:${nowTop}px"></div>`;
+    }
+
+    return `<div class="cal-grid-daycol">${hourlines}${blocks}${nowLine}</div>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="cal-grid-card">
+      <div class="cal-grid-scroll">
+        <div class="cal-grid-header"><div></div>${headerCells}</div>
+        <div class="cal-grid-body" style="max-height:600px;overflow-y:auto">
+          <div class="cal-grid-hours">${hourLabels}</div>
+          ${dayCols}
+        </div>
+      </div>
+    </div>`;
+
+  const scrollBody = wrap.querySelector('.cal-grid-body');
+  if (scrollBody) {
+    const now = new Date();
+    scrollBody.scrollTop = Math.max(0, (now.getHours() - 2) * HOUR_HEIGHT);
+  }
+}
+
+async function syncFromGCal() {
+  if (!gCalToken) {
+    connectGCal();
+    return;
+  }
+
+  if (!allCalendars.length) await fetchCalendarList();
+  const activeCals = allCalendars.filter(c => c.selected);
+  if (!activeCals.length) {
+    toast('Hãy chọn ít nhất 1 lịch để đồng bộ');
+    return;
+  }
+
+  toast('Đang đồng bộ...');
+  const { mon, sun } = getWeekDateRange(new Date(), weekOffset);
+
+  try {
+    const results = await Promise.all(activeCals.map(async c => {
+      const r = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(c.id)}/events?timeMin=${mon.toISOString()}&timeMax=${sun.toISOString()}&singleEvents=true&orderBy=startTime&maxResults=100`, {
+        headers: { Authorization: `Bearer ${gCalToken}` }
+      });
+      if (r.status === 401) {
+        clearStoredGCalToken();
+        throw new Error('Google Calendar token đã hết hạn. Hãy cấp quyền lại.');
+      }
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error?.message || `Không tải được lịch ${c.summary || c.id}`);
+      }
+      const j = await r.json();
+      return (j.items || []).map(e => ({ ...e, _calName: c.summary, _calId: c.id }));
+    }));
+
+    const data = await getWeek(weekOffset);
+    let added = 0;
+    let updated = 0;
+
+    results.flat().forEach(ev => {
+      if (isAppCreatedGCalEvent(ev)) return;
+      if (!ev.id) return;
+      const dateStr = getSyncedEventDate(ev);
+      if (!dateStr) return;
+
+      const existing = findTaskLocationByGoogleEventId(data, ev.id) || findLegacySyncedTaskLocation(data, ev, dateStr);
+      const nextTask = buildSyncedTaskFromEvent(ev, existing ? data[existing.q][existing.i] : {});
+      if (existing) {
+        data[existing.q][existing.i] = nextTask;
+        updated++;
+      } else {
+        data.q3 = data.q3 || [];
+        data.q3.push(nextTask);
+        added++;
+      }
+    });
+
+    data.lastGoogleCalendarSyncAt = Date.now();
+    await setWeek(weekOffset, data);
+    invalidateWeeksCache();
+    renderTasks();
+    if (document.getElementById('page-gcal')?.classList.contains('on')) {
+      renderGCalPush();
+      loadGCalFromSelected();
+    }
+
+    if (!added && !updated) toast('Không có event mới để đồng bộ');
+    else if (added && updated) toast(`✓ Đồng bộ GCal: thêm ${added}, cập nhật ${updated}`);
+    else if (added) toast(`✓ Đồng bộ GCal: thêm ${added} event`);
+    else toast(`✓ Đồng bộ GCal: cập nhật ${updated} event`);
+  } catch (e) {
+    toast('Lỗi đồng bộ: ' + e.message);
+  }
+}
