@@ -537,8 +537,9 @@ saveTaskEdit = async function() {
   const hours = normalizeTaskHours(document.getElementById('te-hours').value);
   const date = document.getElementById('te-date').value || '';
   const startTime = document.getElementById('te-start-time')?.value || '';
-  const sourceWeekKey = state.weekKey || weekKey(state.weekOff || 0);
-  const sourceData = state.weekKey ? await getWeekByKey(sourceWeekKey) : await getWeek(state.weekOff || 0);
+  const stateWeekOff = state.weekOff ?? 0;
+  const sourceWeekKey = state.weekKey || weekKey(stateWeekOff);
+  const sourceData = state.weekKey ? await getWeekByKey(sourceWeekKey) : await getWeek(stateWeekOff);
   const currentTask = sourceData[state.q]?.[state.i];
 
   if (!currentTask) {
@@ -577,7 +578,7 @@ saveTaskEdit = async function() {
     await setWeekByKey(sourceWeekKey, sourceData);
   } else {
     sourceData[state.q][state.i] = updatedTask;
-    await setWeek(state.weekOff || 0, sourceData);
+    await setWeek(stateWeekOff, sourceData);
   }
 
   invalidateWeeksCache();
@@ -594,7 +595,7 @@ saveTaskEdit = async function() {
     : '✓ Đã lưu task';
 
   if (hasLinkedGoogleCalendarEvent(updatedTask)) {
-    const result = await syncEditedTaskToGoogleCalendar(state.weekOff || 0, state.q, state.i, currentTask, updatedTask);
+    const result = await syncEditedTaskToGoogleCalendar(stateWeekOff, state.q, state.i, currentTask, updatedTask);
     if (result.ok) {
       if (document.getElementById('page-gcal')?.classList.contains('on')) loadGCalFromSelected();
       message = shouldMoveWeek
