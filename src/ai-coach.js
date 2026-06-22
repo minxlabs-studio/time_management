@@ -1042,3 +1042,225 @@ showTab = function(id, btn) {
 ensureGCalModeUi();
 setGCalCreateMode('event');
 syncGCalFilterUi();
+
+// ── TASK CLICK + EVENT TIME SYNC ─────────────────
+function getLocalTimeHHMM(dateInput) {
+  const d = parseCalendarDateInput(dateInput);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function getEventStartTime(ev) {
+  if (!ev?.start?.dateTime) return '';
+  return localDateKey(ev.start.dateTime) ? getLocalTimeHHMM(ev.start.dateTime) : '';
+}
+
+function ensureTaskTimeField() {
+  if (document.getElementById('te-start-time')) return;
+  const dateGroup = document.getElementById('te-date')?.closest('.form-group');
+  if (!dateGroup || !dateGroup.parentNode) return;
+  const timeGroup = document.createElement('div');
+  timeGroup.className = 'form-group';
+  timeGroup.id = 'te-start-time-wrap';
+  timeGroup.innerHTML = `
+    <label>Giờ bắt đầu</label>
+    <input type="time" id="te-start-time">`;
+  dateGroup.parentNode.appendChild(timeGroup);
+}
+
+const baseGetTaskEditSeedWithTime = getTaskEditSeed;
+getTaskEditSeed = async function(task) {
+  const seed = await baseGetTaskEditSeedWithTime(task);
+  seed.startTime = task?.startTime || '';
+  if (!seed.startTime && hasLinkedGoogleCalendarEvent(task) && gCalToken && (typeof isGCalTokenValid !== 'function' || isGCalTokenValid())) {
+    try {
+      const calId = encodeURIComponent(task.gcalCalId || 'primary');
+      const eventId = getGoogleCalendarEventId(task);
+      const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId}/events/${eventId}`, {
+        headers: { Authorization: `Bearer ${gCalToken}` }
+      });
+      if (res.ok) {
+        const ev = await res.json();
+        seed.startTime = getEventStartTime(ev);
+      }
+    } catch (e) {
+      // keep edit usable even if time lookup fails
+    }
+  }
+  return seed;
+};
+
+buildSyncedTaskFromEvent = function(ev, existingTask = {}) {
+  return {
+    ...existingTask,
+    text: buildSyncedTaskText(ev),
+    hours: getSyncedEventHours(ev),
+    date: getEventDateKey(ev),
+    startTime: getEventStartTime(ev) || existingTask.startTime || '',
+    note: ev.description !== undefined ? ev.description : (existingTask.note || ''),
+    gcal: true,
+    itemType: 'event',
+    source: 'gcal',
+    gcalEventId: ev.id,
+    googleCalendarEventId: ev.id,
+    gcalCalId: ev._calId || existingTask.gcalCalId || 'primary',
+    gcalEventSummary: stripQuadrantPrefix(ev.summary || existingTask.gcalEventSummary || existingTask.text || ''),
+    gcalCalendarName: ev._calName || existingTask.gcalCalendarName || '',
+    updated: Date.now(),
+    created: existingTask.created || Date.now()
+  };
+};
+
+buildEditedEventPayload = function(existingEvent, q, task, previousTask = {}) {
+  if (!task.date) return null;
+
+  const summary = buildUpdatedEventSummary(existingEvent.summary, q, task.text);
+  const shouldPreserveDescription = !String(task.note || '').trim() && !String(previousTask.note || '').trim();
+  const description = getTaskGCalDescription(task, shouldPreserveDescription ? (existingEvent.description || '') : '');
+  const timeZone = existingEvent.start?.timeZone || existingEvent.end?.timeZone || 'Asia/Ho_Chi_Minh';
+  const shouldUseTimedEvent = Boolean(existingEvent.start?.dateTime || existingEvent.end?.dateTime || task.hours || task.startTime);
+
+  if (shouldUseTimedEvent) {
+    const durationMs = task.hours ? task.hours * 3600000 : getExistingEventDurationMs(existingEvent);
+    const startTime = task.startTime || getEventStartTime(existingEvent) || '09:00';
+    const start = new Date(`${task.date}T${startTime}:00+07:00`);
+    if (Number.isNaN(start.getTime())) return null;
+    const end = new Date(start.getTime() + Math.max(durationMs, 30 * 60000));
+
+    return {
+      summary,
+      description,
+      start: { dateTime: start.toISOString(), timeZone },
+      end: { dateTime: end.toISOString(), timeZone }
+    };
+  }
+
+  return {
+    summary,
+    description,
+    start: { date: task.date },
+    end: { date: addDaysToDateKey(task.date, 1) }
+  };
+};
+
+function renderTaskTimeMeta(task) {
+  return task?.startTime ? `<span>🕒 ${task.startTime}</span>` : '';
+}
+
+buildTaskList = function(q, tasks) {
+  const el = document.getElementById('tl-' + q);
+  if (!tasks.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:10px 4px;line-height:1.6">Chưa có việc nào - kéo task vào đây hoặc thêm bên dưới</div>';
+    return;
+  }
+
+  el.innerHTML = tasks.map((t, i) => `
+    <div class="task-item" draggable="true" data-q="${q}" data-i="${i}"
+         ondragstart="onTaskDragStart(event,'${q}',${i})" ondragend="onTaskDragEnd(event)">
+      <button class="t-check ${t.done ? 'done' : ''}" onclick="event.stopPropagation();toggleTask('${q}',${i})" aria-label="Đánh dấu hoàn thành"></button>
+      <div class="t-body" onclick="openTaskEdit('${q}',${i})" title="Bấm để sửa task" style="cursor:pointer">
+        <div class="t-text ${t.done ? 'done' : ''}">${esc(t.text)}</div>
+        ${t.note ? `<div class="t-note" title="${esc(t.note)}">${esc(getTaskNotePreview(t.note))}</div>` : ''}
+        <div class="t-meta">
+          ${t.hours ? `<span>⏱ ${t.hours}h</span>` : ''}
+          ${renderTaskTimeMeta(t)}
+          ${t.actualMinutes ? `<span>🔥 ${fmtFocusMin(t.actualMinutes)} đã tập trung</span>` : ''}
+          ${t.date ? `<span>📅 ${fmtD(t.date)}</span>` : ''}
+          ${t.goalId ? `<span class="goal-tag" style="background:${goalColor(t.goalId, true)};color:${goalColor(t.goalId, false)}">🎯 Goal</span>` : ''}
+          ${t.gcal ? `<span class="gcal-dot">● GCal</span>` : ''}
+        </div>
+      </div>
+      <div class="t-actions">
+        <button class="t-act-btn t-act-btn-focus" data-task-text="${esc(t.text)}" onclick='event.stopPropagation();startFocus("${q}",${i},this.dataset.taskText)' title="Bắt đầu tập trung">▶</button>
+        <button class="t-act-btn" onclick="event.stopPropagation();openTaskEdit('${q}',${i})" title="Sửa task">✎</button>
+        ${!t.gcal && t.date ? `<button class="t-act-btn" onclick="event.stopPropagation();pushTask('${q}',${i})" title="Đẩy lên GCal">📅</button>` : ''}
+        <button class="t-act-btn" onclick="event.stopPropagation();deleteTask('${q}',${i})" title="Xóa">×</button>
+      </div>
+    </div>`).join('');
+};
+
+openTaskEdit = async function(q, i) {
+  const data = await getWeek(weekOffset);
+  const task = data[q]?.[i];
+  if (!task) {
+    toast('Không tìm thấy task để sửa');
+    return;
+  }
+
+  const editSeed = await getTaskEditSeed(task);
+  ensureTaskEditModal();
+  ensureTaskTimeField();
+  taskEditState = { q, i, weekOff: weekOffset };
+  document.getElementById('te-title').value = editSeed.title;
+  document.getElementById('te-hours').value = task.hours || '';
+  document.getElementById('te-date').value = task.date || '';
+  document.getElementById('te-start-time').value = editSeed.startTime || task.startTime || '';
+  document.getElementById('te-note').value = editSeed.note;
+  document.getElementById('task-edit-hint').textContent = hasLinkedGoogleCalendarEvent(task)
+    ? 'Task này đang liên kết Google Calendar. Khi lưu, app sẽ cập nhật cả ngày và giờ event hiện có.'
+    : 'Chỉnh sửa sẽ chỉ cập nhật task trong app.';
+  document.getElementById('task-edit-modal-bg').classList.add('on');
+  document.getElementById('te-title').focus();
+  document.getElementById('te-title').select();
+};
+
+saveTaskEdit = async function() {
+  const state = taskEditState;
+  if (!state) return;
+
+  const title = document.getElementById('te-title').value.trim();
+  if (!title) {
+    toast('Cần có tiêu đề task');
+    return;
+  }
+
+  const note = document.getElementById('te-note').value.trim();
+  const hours = normalizeTaskHours(document.getElementById('te-hours').value);
+  const date = document.getElementById('te-date').value || '';
+  const startTime = document.getElementById('te-start-time')?.value || '';
+
+  const data = await getWeek(state.weekOff);
+  const currentTask = data[state.q]?.[state.i];
+  if (!currentTask) {
+    closeTaskEditModal();
+    toast('Task không còn tồn tại');
+    return;
+  }
+
+  const updatedTask = {
+    ...currentTask,
+    text: title,
+    note,
+    hours,
+    date,
+    startTime,
+    updated: Date.now()
+  };
+
+  if (currentTask.gcalEventSummary || hasLinkedGoogleCalendarEvent(currentTask)) {
+    updatedTask.gcalEventSummary = title;
+  }
+
+  data[state.q][state.i] = updatedTask;
+  await setWeek(state.weekOff, data);
+  invalidateWeeksCache();
+  closeTaskEditModal();
+
+  if (state.weekOff === weekOffset) {
+    renderTasks();
+    if (document.getElementById('page-goals')?.classList.contains('on')) renderGoals();
+  }
+
+  let message = '✓ Đã lưu task';
+  if (hasLinkedGoogleCalendarEvent(updatedTask)) {
+    const result = await syncEditedTaskToGoogleCalendar(state.weekOff, state.q, state.i, currentTask, updatedTask);
+    if (result.ok) {
+      if (document.getElementById('page-gcal')?.classList.contains('on')) loadGCalFromSelected();
+      message = '✓ Đã cập nhật task và Google Calendar';
+    } else {
+      message = `⚠️ Đã lưu task nhưng chưa cập nhật Google Calendar: ${result.message}`;
+    }
+  }
+
+  toast(message);
+};
